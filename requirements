@@ -1,0 +1,7 @@
+List of required packages for PyCruise to work:
+
+seabird
+gsw
+numpy
+matplotlib
+glob
