@@ -14,8 +14,12 @@ from matplotlib.dates import date2num
 def create_latlon_text(lat,lon):
     '''Creates two strings which contain a text for latitude and longitude
     Inputs:
-        lat - latitude
-        lon - longitude
+        lat(float or int) - latitude
+        lon(float or int) - longitude
+        
+    Outputs:
+        latstring(string) - the string for the latitude
+        lonstring(string) - the string for the longitude
     '''
     lat_minutes = str(np.round((np.abs(lat - int(lat)))*60,5))
     if lat < 0:
