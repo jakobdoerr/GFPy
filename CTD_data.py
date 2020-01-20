@@ -16,8 +16,12 @@ import cmocean
 def create_latlon_text(lat,lon):
     '''Creates two strings which contain a text for latitude and longitude
     Inputs:
-        lat - latitude
-        lon - longitude
+        lat(float or int) - latitude
+        lon(float or int) - longitude
+        
+    Outputs:
+        latstring(string) - the string for the latitude
+        lonstring(string) - the string for the longitude
     '''
     lat_minutes = str(np.round((np.abs(lat - int(lat)))*60,5))
     if lat < 0:
@@ -312,3 +316,4 @@ def plot_CTD_section(stations,CTD=None,infile=None,
 if __name__ == '__main__':
     CTD = readCTD('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/2019_Masfjorden/Data/GS2018/','JAKOB') 
     plot_CTD_section(range(401,410),CTD = CTD,cruise_name='JAKOB',section_name='A')
+

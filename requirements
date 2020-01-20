@@ -5,3 +5,4 @@ gsw
 numpy
 matplotlib
 glob
+scipy
