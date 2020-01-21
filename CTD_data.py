@@ -51,6 +51,7 @@ def readCTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
                    the function will read all stations in *inpath*
         corr(tuple) - tuple with 2 values containing (slope,intersect) of
                       linear correction model
+            
     returns:
         CTD(dict<dict>) - a dict of dicts contaning the data for
                     all the relevant station data
@@ -107,7 +108,7 @@ def readCTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
 
     # save data if outpath was given    
     if outpath is not None:
-        np.save(cruise_name+'_CTD',CTD_dict)
+        np.save(outpath+cruise_name+'_CTD',CTD_dict)
         
     return CTD_dict
 
@@ -278,7 +279,8 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     
     # read in the data (only needed if no CTD-dict, but a file was given)
     if type(CTD) is str:
-        CTD = np.load(CTD,allow_pickle=True)
+        print('reading file...')
+        CTD = np.load(CTD,allow_pickle=True).item()
         
     # Check if all stations given are found in the data
     assert min([np.isin(st,list(CTD.keys())) for st in stations]), 'Not all '\
@@ -327,12 +329,50 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     # tight_layout
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
     
-def plot_CTD_station():
+def plot_CTD_station(CTD,station):
     '''Function which plots a profile'''
     # TODO
+    # Check if the function has data to work with
+    assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
+            ' a) a data dict or \n b) a npy file string with the data !'
+    
+    # read in the data (only needed if no CTD-dict, but a file was given)
+    if type(CTD) is str:
+        print('reading file...')
+        CTD = np.load(CTD,allow_pickle=True).item()
+        
+    # Check if all stations given are found in the data
+    assert np.isin(station,list(CTD.keys())), 'The station was not found in '\
+            'the CTD data! \n The following stations are in the data: '\
+            +''.join([str(st) +' ' for st in CTD.keys()])
+    
+    # end of checks.
+            
+    CTD = CTD[station]
+    
+    fig,ax = plt.subplots(1,1,figsize=(5,5))
+    ax.plot(CTD['CT'],-CTD['z'],'r')
+    ax.set_xlabel('Conservative temperature [˚C]',color='r')
+    ax.set_ylabel('Depth [m]')
+    ax.spines['bottom'].set_color('r')
+    ax.tick_params(axis='x', colors='r')
+    ax.invert_yaxis()
+    ax2 = ax.twiny()
+    ax2.plot(CTD['SA'],-CTD['z'],'b')
+    ax2.set_xlabel('Absolute salinity [g / kg]',color='b')
+    ax2.tick_params(axis='x', colors='b')
+    
+    
+    
     
 # Only for testing purposes:
 if __name__ == '__main__':
-    CTD = readCTD('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/2019_Masfjorden/Data/GS2018/','JAKOB') 
+    # read in some CTD data
+    CTD = readCTD('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/2019_Masfjorden/Data/GS2018/','JAKOB',
+                  outpath= '/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/PyCruise/') 
+    # plot a CTD section
     plot_CTD_section(CTD,range(401,410),cruise_name='JAKOB',section_name='A')
-
+    # plot the section again, with filename instead of direct dictionary:
+    plot_CTD_section('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/PyCruise/JAKOB_CTD.npy',range(401,410),cruise_name='JAKOB',section_name='A')
+    # plot a single profile
+    plot_CTD_station(CTD, 402)
