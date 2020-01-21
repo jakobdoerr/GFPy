@@ -6,7 +6,6 @@ This module contains functions that read and plot CTD data.
 from seabird.cnv import fCNV
 import gsw
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import glob
 from scipy.interpolate import interp1d,griddata
@@ -39,10 +38,10 @@ def create_latlon_text(lat,lon):
     
     return latstring,lonstring
 
-def readCTD(inpath,cruise_name,outpath=None,stations=None):
+def readCTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
     '''This function reads in the CTD data from cnv files in *inpath*
     for the stations *stations* and returns a list of dicts containing
-    the data. 
+    the data. Conductivity correction (if any) can be specified in *corr*
     
     inputs:
         inpath(string) - input path where the cnv files are stored
@@ -50,6 +49,8 @@ def readCTD(inpath,cruise_name,outpath=None,stations=None):
         outpath(string) - path where to store the output (optional)
         stations(list) - list of stations to read in (optional). If not given, 
                    the function will read all stations in *inpath*
+        corr(tuple) - tuple with 2 values containing (slope,intersect) of
+                      linear correction model
     returns:
         CTD(dict<dict>) - a dict of dicts contaning the data for
                     all the relevant station data
@@ -92,6 +93,7 @@ def readCTD(inpath,cruise_name,outpath=None,stations=None):
         p['z'] = gsw.z_from_p(p['P'],p['LAT'])
         p['BottomDepth'] = np.round(np.nanmax(np.abs(p['z']))+8)
         p['C'][p['C']<1] = np.nan
+        p['C'] = corr[0]*p['C'] + corr[1] # apply correction
         p['T'][p['T']<-2] = np.nan
         p['S'] = gsw.SP_from_C(p['C']*10,p['T'],p['P'])
         p['S'][p['S']<20] = np.nan
@@ -113,6 +115,7 @@ def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
     '''This functions accepts a CTD dict of dicts, finds out the maximum 
     length of the depth vectors for the given stations, and fills all
     fields to that maximum length, using np.nan values. 
+    
     inputs:
         CTD - dict of dicts with the CTD data
         stations - list of stations to select
@@ -230,7 +233,8 @@ def contour_section(ax,X,Y,Z,Z2,station_pos=None,cmap='jet',Z2_contours=None,
     cSIG = ax.contour(X,Y,Z2,levels = Z2_contours,
                        colors='k',linewidths=[1],alpha=0.6) # draw Z2
     clabels = plt.clabel(cSIG, Z2_contours,fontsize=8,fmt = '%1.1f') # add contour labels
-    [txt.set_bbox(dict(facecolor='white', edgecolor='none', pad=0,alpha=0.6)) for txt in clabels]
+    [txt.set_bbox(dict(facecolor='white', edgecolor='none',
+                       pad=0,alpha=0.6)) for txt in clabels]
     plt.colorbar(cT,ax = ax,label=clabel,pad=0.01) # add colorbar
     ax.set_ylim(y_limits)
     ax.invert_yaxis()
@@ -251,8 +255,7 @@ def contour_section(ax,X,Y,Z,Z2,station_pos=None,cmap='jet',Z2_contours=None,
                         textcoords='offset points',ha='center')
     return ax
     
-def plot_CTD_section(stations,CTD=None,infile=None,
-                     section_name='',cruise_name = ''):
+def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='distance'):
     '''This function plots a CTD section of Temperature and Salinity,
     given CTD data either directly (through *CTD*) or via a file (through)
     *infile*.
@@ -270,33 +273,37 @@ def plot_CTD_section(stations,CTD=None,infile=None,
         fig - a handle to the figure
     '''
     # Check if the function has data to work with
-    assert CTD is not None or infile is not None, 'You must provide either \n'\
-            ' a) a data list (parameter CTD) or \n b) a file with'\
-            ' the data (parameter infile)!'
+    assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
+            ' a) a data dict or \n b) a npy file string with the data !'
+    
+    # read in the data (only needed if no CTD-dict, but a file was given)
+    if type(CTD) is str:
+        CTD = np.load(CTD,allow_pickle=True)
+        
     # Check if all stations given are found in the data
     assert min([np.isin(st,list(CTD.keys())) for st in stations]), 'Not all '\
             'of the provided stations were found in the CTD data! \n'\
             'The following stations were not found in the data: '\
             +''.join([str(st)+' ' for st in stations if ~np.isin(st,list(CTD.keys()))])
+    # Check if x_type is either distance or time
+    assert x_type in ['distance','time'], 'x_type must be eigher distance or '\
+            'time!'
+            
     
-    # read in the data (only needed if no CTD-dict, but a file was given)
-    if CTD is None:
-        CTD = np.load(infile,allow_pickle=True)
     
     # select only the given stations in the data
     CTD = {key:CTD[key] for key in CTD.keys() if key in stations}
     
-
     # extract Bottom Depth    
     BDEPTH = np.asarray([d['BottomDepth'] for d in CTD.values()])
 
-    # put the fields (the vector data) on a regular, common pressure grid
+    # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
-    fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations,x_type='distance')
+    fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations,x_type=x_type)
     
-    # plot the figure!
+    # plot the figure
     fig,[axT,axS] = plt.subplots(2,1,figsize=(8,9))
-    
+  
     # Temperature
     axT = contour_section(axT,X,Z,fCTD['T'],fCTD['SIGTH'],
                           station_pos=station_locs,cmap=cmocean.cm.thermal,
@@ -305,15 +312,27 @@ def plot_CTD_section(stations,CTD=None,infile=None,
     # Salinity
     axS = contour_section(axS,X,Z,fCTD['S'],fCTD['SIGTH'],
                           station_pos=station_locs,cmap=cmocean.cm.haline,
-                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)
-    
-    # FIXME: Axis labels!
+                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)    
+    # Add x and y labels
+    axT.set_ylabel('Depth [m]')
+    axS.set_ylabel('Depth [m]')
+    if x_type == 'distance':
+        axS.set_xlabel('Distance [km]')
+    else:
+        axS.set_xlabel('Time [h]')
+        
     # add title
-    fig.suptitle(cruise_name+' Section '+section_name)
+    fig.suptitle(cruise_name+' Section '+section_name,fontweight='bold')
     
- 
+    # tight_layout
+    fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
+    
+def plot_CTD_station():
+    '''Function which plots a profile'''
+    # TODO
+    
 # Only for testing purposes:
 if __name__ == '__main__':
     CTD = readCTD('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/2019_Masfjorden/Data/GS2018/','JAKOB') 
-    plot_CTD_section(range(401,410),CTD = CTD,cruise_name='JAKOB',section_name='A')
+    plot_CTD_section(CTD,range(401,410),cruise_name='JAKOB',section_name='A')
 
