@@ -129,6 +129,35 @@ def read_dat_AWS(filename):
     # delete the time stamp column (As it is conserved in the index)
     del station['TIMESTAMP']
 
-
-    
     return station
+
+
+def read_ship_log(filename):
+    """
+    Read the data logged by Kristine Bonnevie
+
+    Parameters
+    ==========
+    
+    filename: str
+        path and name of file to be read
+    
+    Returns
+    =======
+    
+    log: pandas dataframe
+        dataframe containing all variables observed by Kristine Bonnevie
+    
+    """
+    
+    # Read the data 
+    log = pd.read_csv(filename)
+    
+    # set the index to time in Datetime format
+    log.index = pd.to_datetime(log['Timestamp'].tolist(),
+                               format='%Y-%m-%d %H:%M:%S')
+    
+    # delete the time stamp column (As it is conserved in the index)    
+    del log['Timestamp']
+    
+    return log

@@ -49,3 +49,20 @@ AWS_nc = read_netcdf_AWS(filenames[0])
 # ---------------------------
 
 AWS, variables = read_single_AWS(filenames[0])
+
+
+# =============================================================================
+# Read the dataset recorded by the ship log of Kristine Bonnevie
+# =============================================================================
+
+# Document Data location (absolute or relative to current location)
+data_loc = '/home/cdu022/Documents/PhD/Lidar_campaigns/GEOF-232_2019/Example_data/Ship_log/'
+
+# define the data format
+data_format ='*.csv'
+
+# Get all files of sought format
+filenames = sorted(glob.glob(data_loc+data_format))
+
+# read the file
+ship_log = read_ship_log(filenames[0])
