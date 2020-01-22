@@ -8,7 +8,7 @@ Created on Wed Jan 22 16:08:52 2020
 Executable for functions in GFPy
 """
 
-from Met_data import *
+from GFPy.Met_data import *
 import glob
 
 
