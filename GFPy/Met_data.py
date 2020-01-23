@@ -12,7 +12,12 @@ import pandas as pd
 from netCDF4 import Dataset
 from netCDF4 import num2date, date2num 
 from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
+# =============================================================================
+# Reading section
+# =============================================================================
 
 def read_single_AWS(filename):
     """
@@ -35,20 +40,27 @@ def read_single_AWS(filename):
     
     if data_format == 'dat':
         station = read_dat_AWS(filename)
+            # Define variable long names and units
+        variables = {'P': 'Pressure [hPa]',
+                    'TA': r'Air Temperature [$^\circ$C]',
+                    'UU': 'Relative Humidity [%]',
+                    'FF': 'Wind Speed [m/s]',
+                    'DD': r'Wind Direction [$^\circ$]',
+                    'RR_01': 'Rain Rate [mm]',
+                    'QSI_01': r'Shortwave Irradiation [W/m$^2$]'}
     elif data_format == 'nc':
         station = read_netcdf_AWS(filename)
+        variables = {'P': 'Pressure [hPa]',
+                     'T': r'Air Temperature [$^\circ$C]',
+                     'RH': 'Relative Humidity [%]',
+                     'FF': 'Wind Speed [m/s]',
+                     'DD': r'Wind Direction [$^\circ$]',
+                     'RR': 'Rain Rate [mm]',
+                     'RAD': r'Shortwave Irradiation [W/m$^2$]'}
     else:
         print('The data format '+str(data_format)+' is not supported by read_single_AWS')
-        station = pd.DataFrame()        
-    
-    # Define variable long names and units
-    variables ={'P': 'Pressure [hPa]',
-                'TA': r'Air Temperature [$^\circ$C]',
-                'UU': 'Relative Humidity [%]',
-                'FF': 'Wind Speed [m/s]',
-                'DD': r'Wind Direction [$^\circ$]',
-                'RR_01': 'Rain Rate [mm]',
-                'QSI_01': r'Shortwave Irradiation [W/m$^2$]'}
+        station   = pd.DataFrame()        
+        variables = pd.DataFrame()     
     
     return station, variables
     
@@ -161,3 +173,40 @@ def read_ship_log(filename):
     del log['Timestamp']
     
     return log
+
+
+# =============================================================================
+# Ploting section
+# =============================================================================
+
+def plot_AWS(filename):
+    """
+    Plot the meteorological data from a single Autometed weather station (AWS). 
+    
+    Parameters
+    ==========
+    filename: str
+        path and name of file to be read
+        
+    Returns
+    =======
+    figure: matplotlib.pyplot.figure
+        figure of all variables connected to AWS observations
+            
+    """
+    
+    # Read the AWS file 
+    station, variables = read_single_AWS(filename)
+    
+    # Plot the data
+    
+    fig, ax = plt.subplots(nrows = len(variables), figsize = [14,len(variables)*3], sharex=True)
+    i = 0
+    for var in variables:
+        ax[i].plot(station[var])
+        ax[i].set_ylabel(variables[var])
+        i = i+1
+    ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax[0].set_xlim([station.index[0],station.index[-1]])
+    
+    
