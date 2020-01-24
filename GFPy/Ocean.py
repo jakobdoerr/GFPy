@@ -13,14 +13,23 @@ from matplotlib.dates import date2num
 import cmocean
 
 def create_latlon_text(lat,lon):
-    '''Creates two strings which contain a text for latitude and longitude
-    Inputs:
-        lat(float or int) - latitude
-        lon(float or int) - longitude
-        
-    Outputs:
-        latstring(string) - the string for the latitude
-        lonstring(string) - the string for the longitude
+    '''
+    Creates two strings which contain a text for latitude and longitude
+
+    Parameters
+    ----------
+    lat : scalar
+        latitude.
+    lon : scalar
+        longitude.
+
+    Returns
+    -------
+    latstring : str
+        the string for the latitude.
+    lonstring : str
+        the string for the longitude.
+
     '''
     lat_minutes = str(np.round((np.abs(lat - int(lat)))*60,5))
     if lat < 0:
@@ -38,25 +47,34 @@ def create_latlon_text(lat,lon):
     
     return latstring,lonstring
 
-def readCTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
-    '''This function reads in the CTD data from cnv files in *inpath*
-    for the stations *stations* and returns a list of dicts containing
-    the data. Conductivity correction (if any) can be specified in *corr*
-    
-    inputs:
-        inpath(string) - input path where the cnv files are stored
-        cruise_name(string) - name of the cruise
-        outpath(string) - path where to store the output (optional)
-        stations(list) - list of stations to read in (optional). If not given, 
-                   the function will read all stations in *inpath*
-        corr(tuple) - tuple with 2 values containing (slope,intersect) of
-                      linear correction model
-            
-    returns:
-        CTD(dict<dict>) - a dict of dicts contaning the data for
-                    all the relevant station data
+def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
     '''
-    
+    This function reads in the CTD data from cnv files in `inpath`
+    for the stations `stations` and returns a list of dicts containing
+    the data. Conductivity correction (if any) can be specified in `corr`
+
+    Parameters
+    ----------
+    inpath : str
+        input path where the cnv files are stored.
+    cruise_name : str
+        name of the cruise.
+    outpath : str, optional
+        path where to store the output. The default is None.
+    stations : array_like, optional
+        list of stations to read in (optional). If not given, 
+        the function will read all stations in `inpath`. The default is None.
+    corr : tuple, optional
+        tuple with 2 values containing (slope,intersect) of
+                      linear correction model. The default is (1.,0.).
+
+    Returns
+    -------
+    CTD_dict : dict
+        a dict of dicts contaning the data for
+                    all the relevant station data.
+
+    '''
     # create a dict that converts the variable names in the cnv files to
     # the variable names used by us:
     var_names = {'PRES':'P','temperature':'T','t168C':'T2','CNDC':'C',
@@ -112,29 +130,46 @@ def readCTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
         
     return CTD_dict
 
-def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
-    '''This functions accepts a CTD dict of dicts, finds out the maximum 
+def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
+    '''
+    This function accepts a CTD dict of dicts, finds out the maximum 
     length of the depth vectors for the given stations, and fills all
     fields to that maximum length, using np.nan values. 
-    
-    inputs:
-        CTD - dict of dicts with the CTD data
-        stations - list of stations to select
-        interp_opt - flag how to interpolate over X (optional). 1: no interpolation,
+
+    Parameters
+    ----------
+    CTD : dict of dicts
+        CTD data. Is created by `read_CTD`
+    stations : array_like, optional
+        list of stations to select from `CTD`.
+    interp_opt : int, optional
+        flag how to interpolate over X (optional). 
+                     0: no interpolation,
                      1: linear interpolation, fine grid (default),
-                     2: linear interpolation, coarse grid
-        x_type - whether X is time or distance (default). Optional
-        
-    outputs:
-        fCTD - dict of dicts with the filled CTD data of the selected stations
-        Z - common depth vector
-        X - common Z vector (either time or distance)
-        station_locs - locations of the stations as X units (time or distance)
+                     2: linear interpolation, coarse grid. The default is 1.
+    x_type : str, optional
+        whether X is 'time' or 'distance'. The default is 'distance'.
+
+    Returns
+    -------
+    fCTD : dict
+        dict with the gridded CTD data.
+    Z : array_like
+        common depth vector.
+    X : array_like
+        common X vector.
+    station_locs : array_like
+        locations of the stations as X units.
+
     '''
 
+    # if no stations are given, take all stations available
+    if stations is None:
+        stations = list(CTD.keys())
+        
     # construct the Z-vector from the max and min depth of the given stations
-    maxdepth = np.nanmax([np.nanmax(-CTD[i]['z']) for i in CTD.keys()])
-    mindepth = np.nanmin([np.nanmin(-CTD[i]['z']) for i in CTD.keys()])
+    maxdepth = np.nanmax([np.nanmax(-CTD[i]['z']) for i in stations])
+    mindepth = np.nanmin([np.nanmin(-CTD[i]['z']) for i in stations])
     Z = np.linspace(mindepth,maxdepth,int(maxdepth-mindepth)+1)
     
     # construct the X-vector, either distance or time
@@ -154,7 +189,8 @@ def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
     fCTD = {}
     if interp_opt == 0: # only grid over depth
         for field in fields:
-            fCTD[field] = np.array([interp1d(-value['z'],value[field],bounds_error=False)(Z)
+            fCTD[field] = np.array([interp1d(-value['z'],value[field],
+                                             bounds_error=False)(Z)
                             for value in CTD.values()]).transpose()
     
     elif interp_opt == 1: # grid over depth and x (time or distance)
@@ -163,7 +199,8 @@ def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
         X_orig,Z_orig = [f.ravel() for f in np.meshgrid(X,Z)] 
         for field in fields:
             # grid in Z
-            temp_array = np.array([interp1d(-value['z'],value[field],bounds_error=False)(Z)
+            temp_array = np.array([interp1d(-value['z'],value[field],
+                                            bounds_error=False)(Z)
                             for value in CTD.values()]).transpose().ravel()
             mask = np.where(~np.isnan(temp_array)) # NaN mask
 
@@ -180,7 +217,8 @@ def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
         X_orig,Z_orig = [f.ravel() for f in np.meshgrid(X,Z)] 
         for field in fields:
             # grid in Z
-            temp_array = np.array([interp1d(-value['z'],value[field],bounds_error=False)(Z)
+            temp_array = np.array([interp1d(-value['z'],value[field],
+                                            bounds_error=False)(Z)
                             for value in CTD.values()]).transpose().ravel()
             mask = np.where(~np.isnan(temp_array)) # NaN mask
 
@@ -194,84 +232,117 @@ def CTD_to_grid(CTD,stations,interp_opt= 1,x_type='distance'):
     return fCTD,Z,X,station_locs
     
      
-def contour_section(ax,X,Y,Z,Z2,station_pos=None,cmap='jet',Z2_contours=None,
-                    clabel='',bottom_depth=None,clevels=None,station_text=''):
-    '''Plots a filled contour plot of *Z*, with contourf of *Z2* on top to 
+def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contours=None,
+                    clabel='',bottom_depth=None,clevels=20,station_text=''):
+    '''    
+    Plots a filled contour plot of *Z*, with contourf of *Z2* on top to 
     the axes *ax*. It also displays the position of stations, if given in
     *station_pos*, adds labels to the contours of Z2, given in 
     *Z2_contours*. If no labels are given, it assumes Z2 is density (sigma0) 
     and adds its own labels. It adds bottom topography if given in *bottom_depth*.
-    Inputs:
-        ax - axes object to plot on
-        X(array) - X-values
-        Y(array) - Y-values
-        Z(array) - the filled contour field
-        Z2(array) - the contour field on top
-        station_pos(list) - the station positions (optional)
-        cmap - the colormap for the filled contours (optional)
-        Z2_contours(list) - the contour label positions for *Z2* (optional)
-        clabel(string) - label to put on the colorbar (optional)
-        bottom_depth(list) - list with bottom depth
-        clevels(list) - list of color levels to use for *Z* (optional)
-        
-    Outputs:
-        ax - the axes object
+    
+    Parameters
+    ----------
+    X : (N,K) array_like
+        X-values.
+    Y : (N,K) array_like
+        Y-values.
+    Z : (N,K) array_like
+        the filled contour field.
+    Z2 : (N,K) array_like, optional
+        the contour field on top. The default is None.
+    ax : plot axes, optional
+        axes object to plot on. The default is the current axes.
+    station_pos : (S,) array_like, optional
+        the station positions. The default is None (all stations are plotted).
+    cmap : str or array_like, optional
+        the colormap for the filled contours. The default is 'jet'.
+    Z2_contours : array_like, optional
+        the contour label positions for `Z2`str. The default is None.
+    clabel : str, optional
+        label to put on the colorbar. The default is ''.
+    bottom_depth : (S,) array_like, optional
+        list with bottom depth. The default is None.
+    clevels : array_like or number, optional
+        list of color levels, or number of levels to use for `Z`. 
+        The default is 20.
+    station_text : str, optional
+        Name to label the station locations. Can be the Section Name for 
+        instance. The default is ''.
+
+    Returns
+    -------
+    ax : plot axes
+        The axes of the plot.
+
     '''
+    # open new figure and get current axes, if none is provided
+    if ax is None:
+        ax = plt.gca()
+        
     # get the labels for the Z2 contours
-    if Z2_contours is None:
+    if Z2 is not None and Z2_contours is None:
         Z2_contours = np.concatenate([list(range(21,26)),np.arange(25.5,29,0.2)])
         Z2_contours = [i for i in Z2_contours 
                         if np.nanmin(Z2) < i < np.nanmax(Z2)]
     
     # get the Y-axis limits 
-    y_limits = (0,np.nanmax(Y)+10)
-    
-    # get the color levels
-    if clevels is None:
-        clevels = 20
+    y_limits = (0,np.nanmax(Y))
         
     cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels) # draw Z
-    cSIG = ax.contour(X,Y,Z2,levels = Z2_contours,
-                       colors='k',linewidths=[1],alpha=0.6) # draw Z2
-    clabels = plt.clabel(cSIG, Z2_contours,fontsize=8,fmt = '%1.1f') # add contour labels
-    [txt.set_bbox(dict(facecolor='white', edgecolor='none',
-                       pad=0,alpha=0.6)) for txt in clabels]
+    if Z2 is not None:
+        cSIG = ax.contour(X,Y,Z2,levels = Z2_contours,
+                           colors='k',linewidths=[1],alpha=0.6) # draw Z2
+        clabels = plt.clabel(cSIG, Z2_contours,fontsize=8,fmt = '%1.1f') # add contour labels
+        [txt.set_bbox(dict(facecolor='white', edgecolor='none',
+                           pad=0,alpha=0.6)) for txt in clabels]
     plt.colorbar(cT,ax = ax,label=clabel,pad=0.01) # add colorbar
     ax.set_ylim(y_limits)
     ax.invert_yaxis()
     
     # add bathymetry
     if bottom_depth is not None:
-        ax.fill_between(station_pos,bottom_depth*0+y_limits[1],bottom_depth,
+        # make sure bottom_depth is an np.array
+        bottom_depth = np.asarray(bottom_depth)
+        
+        ax.fill_between(station_pos,bottom_depth*0+y_limits[1]+10,bottom_depth,
                      zorder=999,color='gray')
        
     ax.xaxis.set_ticks_position('both')
     ax.yaxis.set_ticks_position('both')
+    
     # add station ticks
     if station_pos is not None:
         for i,pos in enumerate(station_pos):
             ax.text(pos,0,'v',ha='center',fontweight='bold')
-            if station_text is not '':
+            if station_text != '':
                 ax.annotate(station_text+str(i+1),(pos,0),xytext=(0,10),
                         textcoords='offset points',ha='center')
-    return ax
     
 def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='distance'):
-    '''This function plots a CTD section of Temperature and Salinity,
-    given CTD data either directly (through *CTD*) or via a file (through)
-    *infile*.
+    '''
+    This function plots a CTD section of Temperature and Salinity,
+    given CTD data either directly (through `CTD`) or via a file (through)
+    `infile`.
     
-    inputs: 
-        stations - a list of stations to plot (station numbers have to be 
-                   found inside the CTD data!)
-        CTD - a dict of dicts containing the CTD data. Can be made with
-              the function readCTD
-        infile - string with file (and path) to a numpy file of the CTD data
-                 Can also be made with the function readCTD
-        section_name - name of the Section, will appear in the plot title
-        cruise_name - name of the Cruis, will also appear in the title
-    outputs:
-        fig - a handle to the figure
+    Parameters
+    ----------
+    CTD : str or dict
+        Either a dict of dicts containing the CTD data, which can be made with
+              the function read_CTD. Or a str with a file where the dict is stored
+    stations : array_like
+        stations to plot (station numbers have to be found inside the CTD data!).
+    section_name : str, optional
+        name of the Section, will appear in the plot title. The default is ''.
+    cruise_name : str, optional
+        name of the Cruise, will also appear in the title. The default is ''.
+    x_type : str, optional
+        Wheter to use 'distance' or 'time' as the x-axis. The default is 'distance'.
+
+    Returns
+    -------
+    None.
+
     '''
     # Check if the function has data to work with
     assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
@@ -301,20 +372,20 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
 
     # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
-    fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations,x_type=x_type)
+    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type)
     
     # plot the figure
     fig,[axT,axS] = plt.subplots(2,1,figsize=(8,9))
   
     # Temperature
-    axT = contour_section(axT,X,Z,fCTD['T'],fCTD['SIGTH'],
+    contour_section(X,Z,fCTD['T'],fCTD['SIGTH'],ax = axT,
                           station_pos=station_locs,cmap=cmocean.cm.thermal,
                           clabel='Temperature [˚C]',bottom_depth=BDEPTH,
                           station_text=section_name)
     # Salinity
-    axS = contour_section(axS,X,Z,fCTD['S'],fCTD['SIGTH'],
+    contour_section(X,Z,fCTD['S'],fCTD['SIGTH'],ax=axS,
                           station_pos=station_locs,cmap=cmocean.cm.haline,
-                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)    
+                          clabel='Salinity [g g$^{-1}$]',bottom_depth=BDEPTH)    
     # Add x and y labels
     axT.set_ylabel('Depth [m]')
     axS.set_ylabel('Depth [m]')
@@ -329,8 +400,25 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     # tight_layout
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
     
-def plot_CTD_station(CTD,station):
-    '''Function which plots a profile'''
+def plot_CTD_station(CTD,station,add = False):
+    '''
+    
+
+    Parameters
+    ----------
+    CTD : str or dict
+        Either a dict of dicts containing the CTD data, which can be made with
+              the function read_CTD. Or a str with a file where the dict is stored
+    station : number
+        Number which station to plot (must be in the CTD data!).
+    add : bool, optional
+        Switch whether to add the plot to a figure (True), or to create a 
+        new figure for the plot (False). The default is False.
+
+    Returns
+    -------
+    None.
+    '''
     # TODO
     # Check if the function has data to work with
     assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
@@ -348,9 +436,15 @@ def plot_CTD_station(CTD,station):
     
     # end of checks.
             
+    # select station
     CTD = CTD[station]
     
-    fig,ax = plt.subplots(1,1,figsize=(5,5))
+    if add:
+        ax = plt.gca()
+    else:
+        fig,ax = plt.subplots(1,1,figsize=(5,5))
+    
+    # plot
     ax.plot(CTD['CT'],-CTD['z'],'r')
     ax.set_xlabel('Conservative temperature [˚C]',color='r')
     ax.set_ylabel('Depth [m]')
@@ -361,18 +455,4 @@ def plot_CTD_station(CTD,station):
     ax2.plot(CTD['SA'],-CTD['z'],'b')
     ax2.set_xlabel('Absolute salinity [g / kg]',color='b')
     ax2.tick_params(axis='x', colors='b')
-    
-    
-    
-    
-# Only for testing purposes:
-if __name__ == '__main__':
-    # read in some CTD data
-    CTD = readCTD('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/2019_Masfjorden/Data/GS2018/','JAKOB',
-                  outpath= '/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/PyCruise/') 
-    # plot a CTD section
-    plot_CTD_section(CTD,range(401,410),cruise_name='JAKOB',section_name='A')
-    # plot the section again, with filename instead of direct dictionary:
-    plot_CTD_section('/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/PyCruise/JAKOB_CTD.npy',range(401,410),cruise_name='JAKOB',section_name='A')
-    # plot a single profile
-    plot_CTD_station(CTD, 402)
+    plt.tight_layout()

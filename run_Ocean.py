@@ -3,12 +3,12 @@
 """
 Created on Wed Jan 22 16:08:52 2020
 
-@author: Christiane Duscha (cdu022)
+@author: Jakob Dörr (jdo043
 
-Executable for functions in GFPy.Met_data
+Example script for functions in GFPy.Ocean
 """
 
-from GFPy.Ocean import readCTD,plot_CTD_section,plot_CTD_station
+from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station
 import matplotlib.pyplot as plt
 
 # =============================================================================
@@ -20,11 +20,11 @@ data_loc = '/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/
             '2019_Masfjorden/Data/GS2018/'
 
 # Read all station files in specified folder, and save result in a .npy file
-CTD_all = readCTD(data_loc,'test_cruise',outpath='./')
+CTD_all = read_CTD(data_loc,'test_cruise',outpath='./')
  
 # Read specific stations in the folder
-stations = range(400,410)
-CTD_part = readCTD(data_loc,'test_cruise',stations=stations) 
+stations = range(401,410)
+CTD_part = read_CTD(data_loc,'test_cruise',stations=stations) 
 
 # =============================================================================
 # Plot a CTD section
@@ -34,13 +34,15 @@ CTD_part = readCTD(data_loc,'test_cruise',stations=stations)
 stations = range(401,410)
 
 # plot the section, given the variable CTD_all from above
-plot_CTD_section(CTD_all,stations,cruise_name='test_cruise',section_name='A')
+plot_CTD_section(CTD_all,stations,
+                 cruise_name='test_cruise',section_name='A')
 
 # plot the section, given the path to the .npy file given above
-plot_CTD_section('./test_cruise_CTD.npy',stations,cruise_name='test_cruise',section_name='A')
-
+plot_CTD_section('./test_cruise_CTD.npy',stations,
+                 cruise_name='test_cruise',section_name='A')
 # save the current figure
 plt.savefig('./test_image.pdf')
+
 # =============================================================================
 # Plot a CTD profile
 # =============================================================================
@@ -49,3 +51,18 @@ station = 402
 
 # plot a single profile
 plot_CTD_station(CTD_all, station)
+plt.savefig('./test_profile.pdf')
+
+# plot several single profiles in one plot with subplots
+plt.figure()
+plt.subplot(121)
+plot_CTD_station(CTD_all, station,add = True)
+plt.subplot(122)
+plot_CTD_station(CTD_all, station+1,add = True)
+# if you want to manipulate the figure afterwards, you have to get the
+# axes using plt.gcf().axes. There are 4 axes in this example, 2 for each
+# subplot, because we have two x-axes in each subplot. To, i.e. change the
+# temperaure range and xlabel in the first sublplot, do:
+axx = plt.gcf().axes
+axx[0].set_xlim(0,15)
+axx[0].set_xlabel('Liberal temperature [˚C]')
