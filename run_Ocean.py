@@ -8,7 +8,7 @@ Created on Wed Jan 22 16:08:52 2020
 Example script for functions in GFPy.Ocean
 """
 
-from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station
+from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station,plot_CTD_map
 import matplotlib.pyplot as plt
 
 # =============================================================================
@@ -66,3 +66,16 @@ plot_CTD_station(CTD_all, station+1,add = True)
 axx = plt.gcf().axes
 axx[0].set_xlim(0,15)
 axx[0].set_xlabel('Liberal temperature [˚C]')
+
+# =============================================================================
+# Plot a map of CTD stations
+# =============================================================================
+# define the stations to plot on the map
+stations = range(401,410)
+bathy_file = '/Users/jakobdorr/Documents/PhD/teaching/MATLAB_TO_PYTHON_CRUISE2020'\
+            '/2019_Masfjorden/Data/Bathymetry/Masfjorden_bathy.mat'
+ 
+plot_CTD_map(CTD_all,stations,topofile=bathy_file)
+plt.savefig('./test_map.pdf')
+plt.figure()
+plot_CTD_map(CTD_all) # (you should not plot all stations in one map...)

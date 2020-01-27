@@ -9,8 +9,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 from scipy.interpolate import interp1d,griddata
+from scipy.io import loadmat
 from matplotlib.dates import date2num
 import cmocean
+import cartopy.crs as ccrs
+import cartopy.feature
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
 def create_latlon_text(lat,lon):
     '''
@@ -455,4 +459,63 @@ def plot_CTD_station(CTD,station,add = False):
     ax2.plot(CTD['SA'],-CTD['z'],'b')
     ax2.set_xlabel('Absolute salinity [g / kg]',color='b')
     ax2.tick_params(axis='x', colors='b')
+    plt.tight_layout()
+    
+def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,depth_contours=None):
+    #TODO: Docstring
+    
+    
+    # if no stations are provided, just plot all stations
+    if stations is None:
+        stations = CTD.keys()
+        
+    #provide standard depth contour levels
+    if depth_contours is None:
+        depth_contours = [10,50,100,150,200,300,400,500,1000,2000,
+                          3000,4000,5000]
+    # select only stations
+    CTD = {key:value for key,value in CTD.items() if key in stations}
+    lat = [value['LAT'] for value in CTD.values()]
+    lon = [value['LON'] for value in CTD.values()]
+    std_lat,std_lon = np.std(lat),np.std(lon) 
+    lon_range = [min(lon)-std_lon,max(lon)+std_lon]
+    lat_range = [min(lat)-std_lat,max(lat)+std_lat]
+    
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    if extent is None:
+        extent = [lon_range[0],lon_range[1],lat_range[0],lat_range[1]]
+    ax.set_extent(extent)
+    
+    if topofile is not None: # if topography is provided
+        topo = loadmat(topofile)
+        topo_lat,topo_lon,topo_z = topo['lat'],topo['lon'],topo['D']
+
+        BC = ax.contour(topo_lon,topo_lat,topo_z,colors='lightblue',
+                   levels=depth_contours,linewidths=0.3,
+                    transform=ccrs.PlateCarree())
+        clabels = ax.clabel(BC, depth_contours,fontsize=4,fmt = '%i')
+        [txt.set_bbox(dict(facecolor='none', edgecolor='none',
+                           pad=0,alpha=0.)) for txt in clabels]
+        ax.contour(topo_lon,topo_lat,topo_z,levels=[0],colors='k',linewidths=0.5)
+        ax.contourf(topo_lon,topo_lat,topo_z,levels=[-1,1],
+                    colors=['lightgray','white'])
+    else: # if no topography is provided
+        ax.add_feature(cartopy.feature.GSHHSFeature(scale='auto',
+                                                    facecolor='lightgray',
+                                                    linewidth=0.5))
+        
+    # add the points, and add labels
+    ax.plot(lon,lat,'xr',transform=ccrs.PlateCarree())
+    for i,station in enumerate(stations):
+        ax.text(lon[i],lat[i],str(station),horizontalalignment='center',
+                verticalalignment='bottom')
+       
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                  linewidth=1, color='gray', alpha=0.5, linestyle='--')
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    
+    # make sure aspect ration of the axes is not too extreme
+    ax.set_aspect('auto')
+    plt.gcf().canvas.draw()
     plt.tight_layout()
