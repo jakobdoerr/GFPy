@@ -7,7 +7,7 @@ with open('requirements.txt', encoding='utf-8') as f:
 setup(
   name = 'GFPy',        
   packages = ['GFPy'],   # Chose the same as "name"
-  version = '0.0.2',      # Start with a small number and increase it with every change you make
+  version = '0.0.3',      # Start with a small number and increase it with every change you make
   license='MIT',        # Chose a license from here: https://help.github.com/articles/licensing-a-repository
   description = 'Python toolbox for reading and analysing of meteorological and oceanographic data on UiB cruises.',   # Give a short description about your library
   author = 'Jakob Doerr, Christiane Duscha',                   # Type in your name
