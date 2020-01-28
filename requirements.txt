@@ -6,3 +6,4 @@ scipy
 pandas
 netCDF4
 cartopy
+cmocean
