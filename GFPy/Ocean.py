@@ -423,7 +423,6 @@ def plot_CTD_station(CTD,station,add = False):
     -------
     None.
     '''
-    # TODO
     # Check if the function has data to work with
     assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
             ' a) a data dict or \n b) a npy file string with the data !'
@@ -461,18 +460,38 @@ def plot_CTD_station(CTD,station,add = False):
     ax2.tick_params(axis='x', colors='b')
     plt.tight_layout()
     
-def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,depth_contours=None):
-    #TODO: Docstring
-    
+def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
+                 depth_contours=[10,50,100,150,200,300,400,500,1000,2000,
+                          3000,4000,5000]):
+    '''
+    Function which plots a very basic map of selected CTD stations.
+
+    Parameters
+    ----------
+    CTD : dict
+        Dictionary containing the CTD data. TODO: Should also take a list of pos!
+    stations : array_like, optional
+        The positions to put on the map. The default is all stations.
+    topofile : str, optional
+        MAT file with bathymetry data. The default is None, then no bathymetry
+        will be plotted.
+    extent : (4,) array_like, optional
+        List of map extent. Must be given as [lon0,lon1,lat0,lat1].
+        The default is None.
+    depth_contours : array_like, optional
+        A list containing contour levels for the bathymetry. The default is 
+        [10,50,100,150,200,300,400,500,1000,2000,3000,4000,5000].
+
+    Returns
+    -------
+    None.
+
+    '''
     
     # if no stations are provided, just plot all stations
     if stations is None:
         stations = CTD.keys()
         
-    #provide standard depth contour levels
-    if depth_contours is None:
-        depth_contours = [10,50,100,150,200,300,400,500,1000,2000,
-                          3000,4000,5000]
     # select only stations
     CTD = {key:value for key,value in CTD.items() if key in stations}
     lat = [value['LAT'] for value in CTD.values()]
