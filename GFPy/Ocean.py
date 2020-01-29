@@ -16,6 +16,9 @@ import cartopy.crs as ccrs
 import cartopy.feature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
+############################################################################
+#MISCELLANEOUS FUNCTIONS
+############################################################################
 def create_latlon_text(lat,lon):
     '''
     Creates two strings which contain a text for latitude and longitude
@@ -50,89 +53,6 @@ def create_latlon_text(lat,lon):
     lonstring = str(int(np.abs(lon)))+ ' ' + lon_minutes + ' ' + lon_letter
     
     return latstring,lonstring
-
-def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
-    '''
-    This function reads in the CTD data from cnv files in `inpath`
-    for the stations `stations` and returns a list of dicts containing
-    the data. Conductivity correction (if any) can be specified in `corr`
-
-    Parameters
-    ----------
-    inpath : str
-        input path where the cnv files are stored.
-    cruise_name : str
-        name of the cruise.
-    outpath : str, optional
-        path where to store the output. The default is None.
-    stations : array_like, optional
-        list of stations to read in (optional). If not given, 
-        the function will read all stations in `inpath`. The default is None.
-    corr : tuple, optional
-        tuple with 2 values containing (slope,intersect) of
-                      linear correction model. The default is (1.,0.).
-
-    Returns
-    -------
-    CTD_dict : dict
-        a dict of dicts contaning the data for
-                    all the relevant station data.
-
-    '''
-    # create a dict that converts the variable names in the cnv files to
-    # the variable names used by us:
-    var_names = {'PRES':'P','temperature':'T','t168C':'T2','CNDC':'C',
-                 'CNDC2':'C2','PSAL':'S','PSAL2':'S2','oxygen_ml_L':'OX',
-                 'flC':'flC','par':'PAR','altM':'Z','timeJ':'time',
-                 'timeK':'time','timeS':'elapsedtime','longitude':'lon',
-                 'latitude':'lat'}
-    # get all CTD station files in inpath
-    files = glob.glob(inpath+'*.cnv')
-    #If stations are provided, select the ones that exist
-    if stations is not None:
-        use_files = [i for i in files for j in stations if str(j) in i]
-        assert len(use_files) > 0, 'None of your provided stations exists!'
-        if len(use_files) < len(stations): 
-            print('Warning: Some stations you provided do not exist!')
-        files = use_files
-        
-    files = sorted(files)
-    
-    # Read in the data, file by file
-    CTD_dict = {}
-    for file in files:
-        # get all the fields, construct a dict with the fields
-        profile = fCNV(file)
-        p = {var_names[name]:profile[name] 
-            for name in profile.keys() if name in var_names}
-        
-        # get the interesting header fields and append it to the dict
-        p.update(profile.attrs)
-            
-        # rename the most important ones to the same convention used in MATLAB, 
-        # add other important ones
-        p['LAT'] = p.pop('LATITUDE')
-        p['LON'] = p.pop('LONGITUDE')
-        p['z'] = gsw.z_from_p(p['P'],p['LAT'])
-        p['BottomDepth'] = np.round(np.nanmax(np.abs(p['z']))+8)
-        p['C'][p['C']<1] = np.nan
-        p['C'] = corr[0]*p['C'] + corr[1] # apply correction
-        p['T'][p['T']<-2] = np.nan
-        p['S'] = gsw.SP_from_C(p['C']*10,p['T'],p['P'])
-        p['S'][p['S']<20] = np.nan
-        p['C'][p['S']<20] = np.nan
-        p['SA'] = gsw.SA_from_SP(p['S'],p['P'],p['LON'],p['LAT'])
-        p['CT'] = gsw.CT_from_t(p['SA'],p['T'],p['P'])
-        p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
-        p['st'] = int(p['filename'].split('.')[0][-4::])
-        
-        CTD_dict[p['st']]= p
-
-    # save data if outpath was given    
-    if outpath is not None:
-        np.save(outpath+cruise_name+'_CTD',CTD_dict)
-        
-    return CTD_dict
 
 def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
     '''
@@ -234,8 +154,156 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
 
         
     return fCTD,Z,X,station_locs
+  
+############################################################################
+#READING FUNCTIONS
+############################################################################
+def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
+    '''
+    This function reads in the CTD data from cnv files in `inpath`
+    for the stations `stations` and returns a list of dicts containing
+    the data. Conductivity correction (if any) can be specified in `corr`
+
+    Parameters
+    ----------
+    inpath : str
+        input path where the cnv files are stored.
+    cruise_name : str
+        name of the cruise.
+    outpath : str, optional
+        path where to store the output. The default is None.
+    stations : array_like, optional
+        list of stations to read in (optional). If not given, 
+        the function will read all stations in `inpath`. The default is None.
+    corr : tuple, optional
+        tuple with 2 values containing (slope,intersect) of
+                      linear correction model. The default is (1.,0.).
+
+    Returns
+    -------
+    CTD_dict : dict
+        a dict of dicts contaning the data for
+                    all the relevant station data.
+
+    '''
+    # create a dict that converts the variable names in the cnv files to
+    # the variable names used by us:
+    var_names = {'PRES':'P','temperature':'T','t168C':'T2','CNDC':'C',
+                 'CNDC2':'C2','PSAL':'S','PSAL2':'S2','oxygen_ml_L':'OX',
+                 'flC':'flC','par':'PAR','altM':'Z','timeJ':'time',
+                 'timeK':'time','timeS':'elapsedtime','longitude':'lon',
+                 'latitude':'lat'}
+    # get all CTD station files in inpath
+    files = glob.glob(inpath+'*.cnv')
+    #If stations are provided, select the ones that exist
+    if stations is not None:
+        use_files = [i for i in files for j in stations if str(j) in i]
+        assert len(use_files) > 0, 'None of your provided stations exists!'
+        if len(use_files) < len(stations): 
+            print('Warning: Some stations you provided do not exist!')
+        files = use_files
+        
+    files = sorted(files)
     
-     
+    # Read in the data, file by file
+    CTD_dict = {}
+    for file in files:
+        # get all the fields, construct a dict with the fields
+        profile = fCNV(file)
+        p = {var_names[name]:profile[name] 
+            for name in profile.keys() if name in var_names}
+        
+        # get the interesting header fields and append it to the dict
+        p.update(profile.attrs)
+            
+        # rename the most important ones to the same convention used in MATLAB, 
+        # add other important ones
+        p['LAT'] = p.pop('LATITUDE')
+        p['LON'] = p.pop('LONGITUDE')
+        p['z'] = gsw.z_from_p(p['P'],p['LAT'])
+        p['BottomDepth'] = np.round(np.nanmax(np.abs(p['z']))+8)
+        p['C'][p['C']<1] = np.nan
+        p['C'] = corr[0]*p['C'] + corr[1] # apply correction
+        p['T'][p['T']<-2] = np.nan
+        p['S'] = gsw.SP_from_C(p['C']*10,p['T'],p['P'])
+        p['S'][p['S']<20] = np.nan
+        p['C'][p['S']<20] = np.nan
+        p['SA'] = gsw.SA_from_SP(p['S'],p['P'],p['LON'],p['LAT'])
+        p['CT'] = gsw.CT_from_t(p['SA'],p['T'],p['P'])
+        p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
+        p['st'] = int(p['filename'].split('.')[0][-4::])
+        
+        CTD_dict[p['st']]= p
+
+    # save data if outpath was given    
+    if outpath is not None:
+        np.save(outpath+cruise_name+'_CTD',CTD_dict)
+        
+    return CTD_dict
+
+def read_CTD_from_mat(matfile):
+    '''
+    Reads CTD data from matfile
+
+    Parameters
+    ----------
+    matfile : str
+        The full path to the .mat file. This should contain a struct with the
+        name CTD. This is the common output style of the cruise matlab scripts.
+
+    Returns
+    -------
+    CTD : dict
+        The dictionary with the CTD Data.
+
+    '''
+    # read the raw data using scipy.io.loadmat
+    raw_data = loadmat(matfile, squeeze_me=True, struct_as_record=False)['CTD']
+    # convert to dictionary
+    CTD = {}
+    for record in raw_data:
+        station = record.__dict__['st']
+        CTD[station] = record.__dict__
+        CTD[station].pop('_fieldnames',None)
+        
+    if 'note' in CTD[next(iter(CTD))]:
+        print('Note: This CTD data is already calibrated.')
+        
+    return CTD
+    
+def read_mooring_from_mat(matfile):
+    '''
+    Read mooring data prepared in a .mat file.
+
+    Parameters
+    ----------
+    matfile : str
+        Full path to the .mat file.
+
+    Returns
+    -------
+    raw_data : dict
+        Dictionary with the mooring data.
+
+    '''
+    # read raw data using scipy.io.loadmat
+    raw_data = loadmat(matfile, squeeze_me=True, struct_as_record=False)
+    # find the name of the MATLAB struct
+    variable_name = list(raw_data.keys())[-1]
+    # convert to dictionary, remove _fieldnames (internal)
+    raw_data = raw_data[variable_name].__dict__
+    raw_data.pop('_fieldnames',None)
+    # extract the units dictionary
+    raw_data['units'] = raw_data['units'].__dict__
+    # extract the raw data for the instruments
+    raw_data['ins'] = [value.__dict__ for value in raw_data['ins']]
+    # extract processed data
+    raw_data['mat'] = raw_data['mat'].__dict__
+    
+    return raw_data
+############################################################################
+#PLOTTING FUNCTIONS
+############################################################################
 def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contours=None,
                     clabel='',bottom_depth=None,clevels=20,station_text=''):
     '''    
@@ -389,7 +457,7 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     # Salinity
     contour_section(X,Z,fCTD['S'],fCTD['SIGTH'],ax=axS,
                           station_pos=station_locs,cmap=cmocean.cm.haline,
-                          clabel='Salinity [g g$^{-1}$]',bottom_depth=BDEPTH)    
+                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)    
     # Add x and y labels
     axT.set_ylabel('Depth [m]')
     axS.set_ylabel('Depth [m]')

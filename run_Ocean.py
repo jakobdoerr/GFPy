@@ -16,8 +16,7 @@ import matplotlib.pyplot as plt
 # =============================================================================
 
 # Document Data location (absolute or relative to current location)
-data_loc = '/Users/jakobdorr/Documents/Phd/Teaching/MATLAB_TO_PYTHON_CRUISE2020/'\
-            '2019_Masfjorden/Data/GS2018/'
+data_loc = './testdata/'
 
 # Read all station files in specified folder, and save result in a .npy file
 CTD_all = read_CTD(data_loc,'test_cruise',outpath='./')
