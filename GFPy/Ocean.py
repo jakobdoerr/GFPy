@@ -606,3 +606,68 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
     ax.set_aspect('auto')
     plt.gcf().canvas.draw()
     plt.tight_layout()
+
+def plot_CTD_ts(CTD,stations=None):
+    
+    # select only input stations
+    if stations is not None:
+        CTD = {key:value for key,value in CTD.items() if key in stations}
+        
+    max_S = max([np.nanmax(value['SA']) for value in CTD.values()]) + 0.1
+    min_S = min([np.nanmin(value['SA']) for value in CTD.values()]) - 0.1
+    
+    max_T = max([np.nanmax(value['CT']) for value in CTD.values()]) + 0.5
+    min_T = min([np.nanmin(value['CT']) for value in CTD.values()]) - 0.5
+    
+    
+    create_empty_ts((min_T,max_T),(min_S,max_S))
+    
+    # Plot the data in the empty TS-diagram
+    for station in CTD.values():
+        plt.plot(station['SA'],station['CT'],linestyle='none',marker='.',
+                 label=station['st'])
+        
+    if len(CTD.keys()) > 1:
+        plt.legend(ncol=2,framealpha=1,columnspacing=0.7,handletextpad=0.4)
+    
+def create_empty_ts(T_extent,S_extent,p_ref = 0):
+    '''
+    Creates an empty TS-diagram to plot data into. 
+
+    Parameters
+    ----------
+    T_extent : (2,) array_like
+        The minimum and maximum conservative temperature.
+    S_extent : (2,) array_like
+        The minimum and maximum absolute salinity.
+    p_ref : int, optional
+        Which reference pressure to use. The following options exist:\n
+        0:    0 dbar\n
+        1: 1000 dbar\n
+        2: 2000 dbar\n
+        3: 3000 dbar\n
+        4: 4000 dbar\n
+        The default is 0.
+
+    Returns
+    -------
+    None.
+
+    '''
+    
+    sigma_functions = [gsw.sigma0,gsw.sigma1,gsw.sigma2,gsw.sigma3,gsw.sigma4]
+    T = np.linspace(T_extent[0],T_extent[1],100)
+    S = np.linspace(S_extent[0],S_extent[1],100)
+    
+    T,S = np.meshgrid(T,S)
+    
+    SIGMA = sigma_functions[p_ref](S,T)
+    
+    cs = plt.contour(S,T,SIGMA,colors='k',linestyles='--')
+    plt.clabel(cs,fmt = '%1.1f')
+    
+    plt.ylabel('Conservative Temperature [°C]')
+    plt.xlabel('Absolute Salinity [g kg$^{-1}$]')
+    plt.title('$\Theta$ - $S_A$ Diagram')
+    
+    

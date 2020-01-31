@@ -8,7 +8,7 @@ Created on Wed Jan 22 16:08:52 2020
 Example script for functions in GFPy.Ocean
 """
 
-from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station,plot_CTD_map
+from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station,plot_CTD_map,plot_CTD_ts
 import matplotlib.pyplot as plt
 
 # =============================================================================
@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 # =============================================================================
 
 # Document Data location (absolute or relative to current location)
-data_loc = './testdata/'
+data_loc = './testdata/CTD/'
 
 # Read all station files in specified folder, and save result in a .npy file
 CTD_all = read_CTD(data_loc,'test_cruise',outpath='./')
@@ -74,7 +74,13 @@ stations = range(401,410)
 bathy_file = '/Users/jakobdorr/Documents/PhD/teaching/MATLAB_TO_PYTHON_CRUISE2020'\
             '/2019_Masfjorden/Data/Bathymetry/Masfjorden_bathy.mat'
  
-plot_CTD_map(CTD_all,stations,topofile=bathy_file)
-plt.savefig('./test_map.pdf')
+#plot_CTD_map(CTD_all,stations,topofile=bathy_file)
+#plt.savefig('./test_map.pdf')
 plt.figure()
 plot_CTD_map(CTD_all) # (you should not plot all stations in one map...)
+
+
+# =============================================================================
+# Plot a TS diagram with CTD data
+# =============================================================================
+plot_CTD_ts(CTD_all,[400])
