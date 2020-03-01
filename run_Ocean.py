@@ -3,7 +3,7 @@
 """
 Created on Wed Jan 22 16:08:52 2020
 
-@author: Jakob Dörr (jdo043
+@author: Jakob Dörr (jdo043)
 
 Example script for functions in GFPy.Ocean
 """
