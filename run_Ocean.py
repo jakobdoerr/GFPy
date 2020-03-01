@@ -8,9 +8,10 @@ Created on Wed Jan 22 16:08:52 2020
 Example script for functions in GFPy.Ocean
 """
 
-from GFPy.Ocean import read_CTD,plot_CTD_section,plot_CTD_station,plot_CTD_map,plot_CTD_ts
+import GFPy.Ocean as Oc
 import matplotlib.pyplot as plt
 
+plt.close('all')
 # =============================================================================
 # read in some CTD data
 # =============================================================================
@@ -19,11 +20,11 @@ import matplotlib.pyplot as plt
 data_loc = './testdata/CTD/'
 
 # Read all station files in specified folder, and save result in a .npy file
-CTD_all = read_CTD(data_loc,'test_cruise',outpath='./')
+CTD_all = Oc.read_CTD(data_loc,'test_cruise',outpath='./')
  
 # Read specific stations in the folder
 stations = range(401,410)
-CTD_part = read_CTD(data_loc,'test_cruise',stations=stations) 
+CTD_part = Oc.read_CTD(data_loc,'test_cruise',stations=stations) 
 
 # =============================================================================
 # Plot a CTD section
@@ -33,11 +34,11 @@ CTD_part = read_CTD(data_loc,'test_cruise',stations=stations)
 stations = range(401,410)
 
 # plot the section, given the variable CTD_all from above
-plot_CTD_section(CTD_all,stations,
+Oc.plot_CTD_section(CTD_all,stations,
                  cruise_name='test_cruise',section_name='A')
 
 # plot the section, given the path to the .npy file given above
-plot_CTD_section('./test_cruise_CTD.npy',stations,
+Oc.plot_CTD_section('./test_cruise_CTD.npy',stations,
                  cruise_name='test_cruise',section_name='A')
 # save the current figure
 plt.savefig('./test_image.pdf')
@@ -49,15 +50,15 @@ plt.savefig('./test_image.pdf')
 station = 402
 
 # plot a single profile
-plot_CTD_station(CTD_all, station)
+Oc.plot_CTD_station(CTD_all, station)
 plt.savefig('./test_profile.pdf')
 
 # plot several single profiles in one plot with subplots
 plt.figure()
 plt.subplot(121)
-plot_CTD_station(CTD_all, station,add = True)
+Oc.plot_CTD_station(CTD_all, station,add = True)
 plt.subplot(122)
-plot_CTD_station(CTD_all, station+1,add = True)
+Oc.plot_CTD_station(CTD_all, station+1,add = True)
 # if you want to manipulate the figure afterwards, you have to get the
 # axes using plt.gcf().axes. There are 4 axes in this example, 2 for each
 # subplot, because we have two x-axes in each subplot. To, i.e. change the
@@ -74,13 +75,22 @@ stations = range(401,410)
 bathy_file = '/Users/jakobdorr/Documents/PhD/teaching/MATLAB_TO_PYTHON_CRUISE2020'\
             '/2019_Masfjorden/Data/Bathymetry/Masfjorden_bathy.mat'
  
-#plot_CTD_map(CTD_all,stations,topofile=bathy_file)
-#plt.savefig('./test_map.pdf')
 plt.figure()
-plot_CTD_map(CTD_all) # (you should not plot all stations in one map...)
+Oc.plot_CTD_map(CTD_all,stations,topofile=bathy_file)
+plt.savefig('./test_map.pdf')
+plt.figure()
+Oc.plot_CTD_map(CTD_all) # (you should not plot all stations in one map...)
 
 
 # =============================================================================
 # Plot a TS diagram with CTD data
 # =============================================================================
-plot_CTD_ts(CTD_all,[400])
+plt.figure()
+Oc.plot_CTD_ts(CTD_all,[401,402],pref=0)
+
+# you can also create an empty TS-Diagram, and plot your data in it:
+plt.figure()
+Oc.create_empty_ts((-2,35),(0,40),0)
+
+# Calculate freshwater content
+print(Oc.calc_freshwater_content(CTD_all[401]['S'],CTD_all[401]['z']))

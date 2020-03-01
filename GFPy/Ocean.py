@@ -155,6 +155,31 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
         
     return fCTD,Z,X,station_locs
   
+def calc_freshwater_content(salinity,depth,ref_salinity=34.8):
+    '''
+    
+
+    Parameters
+    ----------
+    salinity : array-like
+        The salinity vector.
+    depth : TYPE
+        The depth vector.
+    ref_salinity : float, optional
+        The reference salinity. The default is 34.8.
+
+    Returns
+    -------
+    float
+        The freshwater content for the profile, in meters
+
+    '''
+    salinity = np.mean([salinity[1:],salinity[:-1]])
+    
+    dz = np.diff(depth)
+    
+    return np.sum((salinity-ref_salinity)/ref_salinity *dz)
+    
 ############################################################################
 #READING FUNCTIONS
 ############################################################################
@@ -607,7 +632,7 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
     plt.gcf().canvas.draw()
     plt.tight_layout()
 
-def plot_CTD_ts(CTD,stations=None):
+def plot_CTD_ts(CTD,stations=None,pref = 0):
     
     # select only input stations
     if stations is not None:
@@ -620,7 +645,7 @@ def plot_CTD_ts(CTD,stations=None):
     min_T = min([np.nanmin(value['CT']) for value in CTD.values()]) - 0.5
     
     
-    create_empty_ts((min_T,max_T),(min_S,max_S))
+    create_empty_ts((min_T,max_T),(min_S,max_S),p_ref=pref)
     
     # Plot the data in the empty TS-diagram
     for station in CTD.values():
@@ -669,5 +694,7 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
     plt.ylabel('Conservative Temperature [°C]')
     plt.xlabel('Absolute Salinity [g kg$^{-1}$]')
     plt.title('$\Theta$ - $S_A$ Diagram')
+    if p_ref > 0:
+        plt.title('Density: $\sigma_{'+str(p_ref)+'}$',loc='left',fontsize=10)
     
     
