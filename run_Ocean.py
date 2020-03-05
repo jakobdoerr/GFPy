@@ -43,6 +43,9 @@ Oc.plot_CTD_section('./test_cruise_CTD.npy',stations,
 # save the current figure
 plt.savefig('./test_image.pdf')
 
+# plot a section of a single variable of your choice (for example Oxygen)
+Oc.plot_CTD_single_section(CTD_all,stations,parameter='OX',
+                           clabel='Oxygen [mg/l]',cmap='cmo.oxy')
 # =============================================================================
 # Plot a CTD profile
 # =============================================================================

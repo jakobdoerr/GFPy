@@ -416,7 +416,8 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
                 ax.annotate(station_text+str(i+1),(pos,0),xytext=(0,10),
                         textcoords='offset points',ha='center')
     
-def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='distance'):
+def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
+                     x_type='distance'):
     '''
     This function plots a CTD section of Temperature and Salinity,
     given CTD data either directly (through `CTD`) or via a file (through)
@@ -462,7 +463,7 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     
     
     # select only the given stations in the data
-    CTD = {key:CTD[key] for key in CTD.keys() if key in stations}
+    CTD = {key:CTD[key] for key in stations}
     
     # extract Bottom Depth    
     BDEPTH = np.asarray([d['BottomDepth'] for d in CTD.values()])
@@ -497,9 +498,92 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',x_type='dista
     # tight_layout
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
     
+def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
+                     x_type='distance',parameter='T',clabel='Temperature [˚C]',
+                     cmap=cmocean.cm.thermal):
+    '''
+    This function plots a CTD section of a chosen variable,
+    given CTD data either directly (through `CTD`) or via a file (through)
+    `infile`.
+
+    Parameters
+    ----------
+    CTD : str or dict
+        Either a dict of dicts containing the CTD data, which can be made with
+              the function read_CTD. Or a str with a file where the dict is stored
+    stations : array_like
+        stations to plot (station numbers have to be found inside the CTD data!).
+    section_name : str, optional
+        name of the Section, will appear in the plot title. The default is ''.
+    cruise_name : str, optional
+        name of the Cruise, will also appear in the title. The default is ''.
+    x_type : str, optional
+        Wheter to use 'distance' or 'time' as the x-axis. The default is 'distance'.
+    parameter : str, optional
+        Which parameter to plot. Check what parameters are available
+        in `CTD`. The default is 'T'.
+    clabel : str, optional
+        The label on the colorbar axis. The default is 'Temperature [˚C]'.
+    cmap : array-like or str, optional
+        The colormap to be used. The default is cmocean.cm.thermal.
+
+    Returns
+    -------
+    None.
+
+    '''
+    # Check if the function has data to work with
+    assert type(CTD) in [dict,str], 'Parameter *CTD*: You must provide either\n'\
+            ' a) a data dict or \n b) a npy file string with the data !'
+    
+    # read in the data (only needed if no CTD-dict, but a file was given)
+    if type(CTD) is str:
+        print('reading file...')
+        CTD = np.load(CTD,allow_pickle=True).item()
+        
+    # Check if all stations given are found in the data
+    assert min([np.isin(st,list(CTD.keys())) for st in stations]), 'Not all '\
+            'of the provided stations were found in the CTD data! \n'\
+            'The following stations were not found in the data: '\
+            +''.join([str(st)+' ' for st in stations if ~np.isin(st,list(CTD.keys()))])
+    # Check if x_type is either distance or time
+    assert x_type in ['distance','time'], 'x_type must be eigher distance or '\
+            'time!'
+            
+    # select only the given stations in the data
+    CTD = {key:CTD[key] for key in stations}
+    
+    # extract Bottom Depth    
+    BDEPTH = np.asarray([d['BottomDepth'] for d in CTD.values()])
+
+    # put the fields (the vector data) on a regular, common pressure and X grid
+    # by interpolating. 
+    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type)
+    
+    # plot the figure
+    fig,ax = plt.subplots(1,1,figsize=(8,5))
+  
+    # Temperature
+    contour_section(X,Z,fCTD[parameter],fCTD['SIGTH'],ax = ax,
+                          station_pos=station_locs,cmap=cmap,
+                          clabel=clabel,bottom_depth=BDEPTH,
+                          station_text=section_name)
+    # Add x and y labels
+    ax.set_ylabel('Depth [m]')
+    if x_type == 'distance':
+        ax.set_xlabel('Distance [km]')
+    else:
+        ax.set_xlabel('Time [h]')
+        
+    # add title
+    fig.suptitle(cruise_name+' Section '+section_name,fontweight='bold')
+    
+    # tight_layout
+    fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
+    
 def plot_CTD_station(CTD,station,add = False):
     '''
-    
+    Plots the temperature and salinity profile of a single station.
 
     Parameters
     ----------
@@ -633,7 +717,29 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
     plt.tight_layout()
 
 def plot_CTD_ts(CTD,stations=None,pref = 0):
-    
+    '''
+    Plots a TS diagram of selected stations from a CTD dataset. 
+
+    Parameters
+    ----------
+    CTD : dict
+        Dictionary containing the CTD data.
+    stations : array-like, optional
+        The desired stations. The default is all stations in CTD.
+    pref : TYPE, optional
+        Which reference pressure to use. The following options exist:\n
+        0:    0 dbar\n
+        1: 1000 dbar\n
+        2: 2000 dbar\n
+        3: 3000 dbar\n
+        4: 4000 dbar\n
+        The default is 0.
+
+    Returns
+    -------
+    None.
+
+    '''
     # select only input stations
     if stations is not None:
         CTD = {key:value for key,value in CTD.items() if key in stations}
