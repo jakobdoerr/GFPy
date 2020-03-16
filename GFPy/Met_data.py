@@ -64,6 +64,60 @@ def read_single_AWS(filename):
         variables = pd.DataFrame()     
     
     return station, variables
+
+def read_netcdf(file):
+    """
+    Read netcdf datasets (with maximum of 2 dimension variables)
+
+    Parameters
+    ==========
+    file: str
+        path and name of file to be read
+        
+    Returns
+    =======
+    buffer: dictionary
+        dictionary, variables can be inspected using buffer.keys()
+
+    """
+    # Define the file
+    data = Dataset(file)
+
+    # Get the time vector
+    try:
+        time = num2date(data['time'][:].data, units=data['time'].units,
+                            calendar=data['time'].calendar)
+    # In case the netcdf stars in year 0000 (not possible in netcdf4 module)
+    except ValueError:
+        # to unidata about this
+        tunits = data['time'].units
+        since_yr_idx = tunits.index('since ') + 6
+        year = int(tunits[since_yr_idx:since_yr_idx+4])
+        year_diff = year - 1
+
+        new_units = tunits[:since_yr_idx] + '0001-01-01 00:00:00'
+        time = num2date(data['time'][:].data, new_units, calendar=data['time'].calendar)
+        time = [datetime(d.year + year_diff, d.month, d.day, 
+                  d.hour, d.minute, d.second) for d in time]    
+
+    # Get the variable names and dimensions
+    var_name = []
+    var_dim = []
+        
+    buffer = {}    
+    for var in data.variables:
+        var_name = np.append(var_name, var)
+        var_dim = np.append(var_dim, len(data[var].shape))
+        # Save the variable
+        if var == 'level':
+            buffer[var] = data[var][:].data
+        elif len(data[var].shape) == 1:
+            buffer[var] = pd.DataFrame(data[var][:].data, index = time, columns = [var])
+        elif len(data[var].shape) == 2:
+            buffer[var] = pd.DataFrame(data[var][:,:].data, index = time, columns = data['level'][:].data)
+        
+    data.close()
+    return buffer
     
 def read_netcdf_AWS(filename):
     """
