@@ -11,9 +11,10 @@ import numpy as np
 import pandas as pd
 from netCDF4 import Dataset
 from netCDF4 import num2date, date2num 
-from datetime import datetime
+from datetime import datetime, timedelta 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+
 
 # =============================================================================
 # Reading section
@@ -163,14 +164,33 @@ def read_ship_log(filename):
     """
     
     # Read the data 
-    log = pd.read_csv(filename)
+    log = pd.read_csv(filename, skiprows=2, encoding = "ISO-8859-1", engine='python')
     
-    # set the index to time in Datetime format
-    log.index = pd.to_datetime(log['Timestamp'].tolist(),
-                               format='%Y-%m-%d %H:%M:%S')
+    # Get the date
+    day = filename.split('/')[-1][3:5]
+    month = filename.split('/')[-1][6:8]
+    year = filename.split('/')[-1][9:13]
     
-    # delete the time stamp column (As it is conserved in the index)    
-    del log['Timestamp']
+    log.Time = pd.to_datetime(year+'-'+month+'-'+day+' '+log.Time)
+    log.Time.iloc[-1] = log.Time.iloc[-1]+timedelta(days=1)
+    
+    log.index = log.Time
+    
+    # Get the longitude and latitude information
+    lon = np.zeros(len(log))
+    lat = np.zeros(len(log))
+    for i in range(len(log)):
+        try:
+            lon[i] = float(log['Longitude'].iloc[i][:3]) + float((log['Longitude'].str.split(' ').iloc[i][0])[3:])/60.
+            lat[i] = float(log['Latitude'].iloc[i][:2]) +  float((log['Latitude'].str.split(' ').iloc[i][0])[2:])/60.
+        except TypeError:
+            lon[i] = np.nan
+            lat[i] = np.nan
+            
+    log['Longitude'] = lon
+    log['Latitude']  = lat
+    
+    log[log==-999] = np.nan
     
     return log
 
