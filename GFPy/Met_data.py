@@ -85,7 +85,7 @@ def read_netcdf(file):
 
     # Get the time vector
     try:
-        time = num2date(data['time'][:].data, units=data['time'].units,
+        time = num2date(data['time'][:].data, units='gregorian',
                             calendar=data['time'].calendar)
     # In case the netcdf stars in year 0000 (not possible in netcdf4 module)
     except ValueError:
@@ -96,7 +96,7 @@ def read_netcdf(file):
         year_diff = year - 1
 
         new_units = tunits[:since_yr_idx] + '0001-01-01 00:00:00'
-        time = num2date(data['time'][:].data, new_units, calendar=data['time'].calendar)
+        time = num2date(data['time'][:].data, new_units, calendar='gregorian')
         time = [datetime(d.year + year_diff, d.month, d.day, 
                   d.hour, d.minute, d.second) for d in time]    
 
