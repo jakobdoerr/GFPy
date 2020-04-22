@@ -7,17 +7,18 @@ from seabird.cnv import fCNV
 import gsw
 import numpy as np
 import matplotlib.pyplot as plt
+from netCDF4 import Dataset,num2date
 import glob
 from scipy.interpolate import interp1d,griddata
 from scipy.io import loadmat
-from matplotlib.dates import date2num
+from matplotlib.dates import date2num,datestr2num
 import cmocean
 import cartopy.crs as ccrs
 import cartopy.feature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
 ############################################################################
-#MISCELLANEOUS FUNCTIONS
+# MISCELLANEOUS FUNCTIONS
 ############################################################################
 def create_latlon_text(lat,lon):
     '''
@@ -291,6 +292,10 @@ def read_CTD_from_mat(matfile):
         CTD[station] = record.__dict__
         CTD[station].pop('_fieldnames',None)
         
+        # correct dnum parameter, because MATLAB and PYTHON 
+        # datenumbers are different
+        CTD[station]['dnum'] = datestr2num(CTD[station]['date'])
+        
     if 'note' in CTD[next(iter(CTD))]:
         print('Note: This CTD data is already calibrated.')
         
@@ -326,8 +331,29 @@ def read_mooring_from_mat(matfile):
     raw_data['mat'] = raw_data['mat'].__dict__
     
     return raw_data
+
+def read_ADCP(filename):
+    # read data
+    try:
+        dset = Dataset(filename)
+    except:
+        assert 0 > 1, 'File is not a valid netCDF file!'
+       
+    data= {}
+    # read all the variables
+    time = dset.variables['time']
+    data['time'] = num2date(time[:],time.units)
+    data['time'] = date2num(data['time'])
+    for var in ['u','v','lat','lon','depth','vship','uship','heading']:
+        data[var] = dset.variables[var][:].data
+        data[var][data[var]>42e20] = np.nan
+    data['shipspeed'] = np.sqrt(data['uship']**2 + data['vship']**2)
+    data['crossvel'] = data['v']*np.sin(data['heading'][:,np.newaxis]*np.pi/180.) \
+                     - data['u']*np.cos(data['heading'][:,np.newaxis]*np.pi/180.)  
+    
+    return data
 ############################################################################
-#PLOTTING FUNCTIONS
+# PLOTTING FUNCTIONS
 ############################################################################
 def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contours=None,
                     clabel='',bottom_depth=None,clevels=20,station_text=''):
@@ -401,7 +427,7 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     if bottom_depth is not None:
         # make sure bottom_depth is an np.array
         bottom_depth = np.asarray(bottom_depth)
-        
+
         ax.fill_between(station_pos,bottom_depth*0+y_limits[1]+10,bottom_depth,
                      zorder=999,color='gray')
        
@@ -803,4 +829,45 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
     if p_ref > 0:
         plt.title('Density: $\sigma_{'+str(p_ref)+'}$',loc='left',fontsize=10)
     
+def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11)):
     
+    # retrieve bottom depth and time of CTD stations
+    time_section = [CTD[st]['dnum'] for st in stations]
+    BDEPTH = np.asarray([float(CTD[st]['BottomDepth']) for st in stations])
+
+    # interpolate ADCP data to CTD time
+    depth = ADCP['depth'][0,:]
+    lon = interp1d(ADCP['time'],ADCP['lon'])(time_section)
+    lat = interp1d(ADCP['time'],ADCP['lat'])(time_section)
+    u = interp1d(ADCP['time'],ADCP['u'],axis=0)(time_section)
+    v = interp1d(ADCP['time'],ADCP['v'],axis=0)(time_section)
+    shipspeed = interp1d(ADCP['time'],ADCP['shipspeed'],axis=0)(time_section)
+    
+    # printout of Ship Speed, to check
+    print('Ship speed at the CTD stations in m/s:')
+    print(shipspeed)
+    
+    # calculate the angle of the section between each CTD station
+    angle = np.arctan(np.diff(lat)/np.cos(lat[1::]*np.pi/180)/np.diff(lon))
+    angle = np.array([angle[0]] + list(angle)+ [angle[-1]])
+    angle = (angle[1::]+angle[0:-1])/2
+    print(angle*180/np.pi)
+    
+    # project u and v to the velocity perpendicular to the section
+    crossvel = u*np.cos(angle)[:,np.newaxis] + v*np.sin(angle)[:,np.newaxis]
+    
+    # create the distance vector of the section
+    x = [0] + list(np.cumsum(gsw.distance(lon,lat)/1000))
+    
+    # map
+    plt.figure()
+    plot_CTD_map(CTD,stations)
+    plt.plot(lon,lat)
+    plt.quiver(lon,lat,np.nanmean(u[:,0:5],1),np.nanmean(v[:,0:5],1))
+    
+    # section
+    plt.figure()
+    contour_section(x,depth,crossvel.transpose(),cmap='RdBu',clevels=levels,
+                    bottom_depth=BDEPTH,station_pos=x)
+    plt.xlabel('Distance [km]')
+    plt.ylabel('Depth [m]')
