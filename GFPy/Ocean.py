@@ -19,6 +19,7 @@ from netCDF4 import Dataset,num2date
 import glob
 from scipy.interpolate import interp1d,griddata
 import scipy.io as spio
+from scipy.io import loadmat
 from matplotlib.dates import date2num,datestr2num
 import cmocean
 import cartopy.crs as ccrs
@@ -255,7 +256,7 @@ def calc_freshwater_content(salinity,depth,ref_salinity=34.8):
     
     return np.sum((salinity-ref_salinity)/ref_salinity *dz)
     
-def loadmat(filename):
+def myloadmat(filename):
     '''
     this function should be called instead of direct spio.loadmat
     as it cures the problem of not properly recovering python dictionaries
@@ -320,7 +321,7 @@ def mat2py_time(matlab_dnum):
         The python datetime 
 
     '''
-    return pd.to_datetime(np.asarray(matlab_dnum)-719529, unit='D')
+    return pd.to_datetime(np.asarray(matlab_dnum)-719529, unit='D').round('1s')
     # try: 
     #     len(matlab_dnum)
     # except:
@@ -487,7 +488,7 @@ def read_mooring_from_mat(matfile):
 
     '''
     # read raw data using scipy.io.loadmat, plus more complicated changes
-    raw_data = loadmat(matfile)
+    raw_data = myloadmat(matfile)
     variable_name = list(raw_data.keys())[-1]
     raw_data = raw_data[variable_name]
     
@@ -904,8 +905,11 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
                    levels=depth_contours,linewidths=0.3,
                     transform=ccrs.PlateCarree())
         clabels = ax.clabel(BC, depth_contours,fontsize=4,fmt = '%i')
-        [txt.set_bbox(dict(facecolor='none', edgecolor='none',
-                           pad=0,alpha=0.)) for txt in clabels]
+        print(clabels)
+        if clabels is not None:
+            for txt in clabels:
+                txt.set_bbox(dict(facecolor='none', edgecolor='none',
+                               pad=0,alpha=0.)) 
         ax.contour(topo_lon,topo_lat,topo_z,levels=[0],colors='k',linewidths=0.5)
         ax.contourf(topo_lon,topo_lat,topo_z,levels=[-1,1],
                     colors=['lightgray','white'])
