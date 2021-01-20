@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-This module contains functions that read and plot CTD data.
+This module contains functions that read (and plot) various
+oceanographic instrument data. This includes:
+- CTD
+- ADCP
+- drifter
+- mooring
+
+The functions are optimized for the file formats typically used
+in student cruises at the Geophysical Institute.
 """
  
 from seabird.cnv import fCNV
@@ -10,16 +18,72 @@ import matplotlib.pyplot as plt
 from netCDF4 import Dataset,num2date
 import glob
 from scipy.interpolate import interp1d,griddata
-from scipy.io import loadmat
+import scipy.io as spio
 from matplotlib.dates import date2num,datestr2num
 import cmocean
 import cartopy.crs as ccrs
 import cartopy.feature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import pandas as pd
 
 ############################################################################
 # MISCELLANEOUS FUNCTIONS
 ############################################################################
+def cal_dist_dir_on_sphere(longitude, latitude):
+    """
+    function to calculate a series of distances between 
+    coordinate points (longitude and latitude) 
+    of the drifter between sequential timesteps
+        
+    Parameters
+    ----------
+    longitude : pd.Series
+         time Series of logitudinal coordinates [deg] of the ship
+    latitude : pd.Series
+        time Series of latitudinal coordinates [deg] of the ship
+            
+    Returns 
+    -------
+    speed : pd.Series
+        speed the drifter travelled between each of the timesteps
+    heading : pd.Series
+        direction drifter headed between each of the timesteps
+               
+    """
+    
+    # Define the Earths Radius (needed to estimate distance on Earth's sphere)
+    R = 6378137. # [m]
+        
+    # Convert latitude and logitude to radians
+    lon = longitude * np.pi/180.
+    lat = latitude  * np.pi/180.
+        
+    # Calculate the differential of lon and lat between the timestamps 
+    dlon = lon.diff()
+    dlat = lat.diff()
+        
+    # Create a shifted time Series
+    lat_t1 = lat.shift(periods=1)
+    lat_t2 = lat.copy()
+        
+    # Calculate interim stage
+    alpha = np.sin(dlat/2.)**2 + np.cos(lat_t1) * np.cos(lat_t2) * np.sin(dlon/2.)**2
+        
+    distance = 2*R*np.arctan2(np.sqrt(alpha),np.sqrt(1-alpha))#(np.arcsin(np.sqrt(alpha))
+           
+    time_delta = pd.Series((lat.index[1:]-lat.index[0:-1]).seconds, index = lat.index[0:-1])
+    speed = (distance/time_delta)
+        
+    # Calculate the ships heading
+    arg1 = np.sin(dlon) * np.cos(lat_t2)
+    arg2 = np.cos(lat_t1) * np.sin(lat_t2) -np.sin(lat_t1) * np.cos(lat_t2) * np.cos(dlon)
+        
+    heading = np.arctan2(arg1,arg2) * (-180./np.pi) + 90.0
+    heading[heading<0.0] = heading + 360.
+    heading[heading>360.0] = heading - 360.
+    
+    return speed, heading
+
 def create_latlon_text(lat,lon):
     '''
     Creates two strings which contain a text for latitude and longitude
@@ -91,6 +155,8 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
     # if no stations are given, take all stations available
     if stations is None:
         stations = list(CTD.keys())
+    else:
+        CTD = {key:CTD[key] for key in stations}
         
     # construct the Z-vector from the max and min depth of the given stations
     maxdepth = np.nanmax([np.nanmax(-CTD[i]['z']) for i in stations])
@@ -130,9 +196,14 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
             mask = np.where(~np.isnan(temp_array)) # NaN mask
 
             # grid in X
-            fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
+            try:
+                fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
                                     temp_array[mask], # data
                                     tuple(np.meshgrid(X_fine,Z))) # new grid
+            except:
+                print('Warning: No gridding possible for '+field+'. Maybe ' \
+                      'no valid data?')
+                fCTD[field] = np.meshgrid(X_fine,Z)[0] * np.nan
         X = X_fine
         
     elif interp_opt == 2: # grid over depth and x, use coarse resolution
@@ -148,9 +219,12 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
             mask = np.where(~np.isnan(temp_array)) # NaN mask
 
             # grid in X
-            fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
+            try:
+                fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
                                     temp_array[mask], # data
                                     tuple(np.meshgrid(X_coarse,Z_coarse))) # new grid
+            except:
+                fCTD[field] = np.meshgrid(X_coarse,Z_coarse)[0] * np.nan
         X,Z = X_coarse,Z_coarse
 
         
@@ -158,8 +232,8 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
   
 def calc_freshwater_content(salinity,depth,ref_salinity=34.8):
     '''
+    Calculates the freshwater content from a profile of salinity and depth.
     
-
     Parameters
     ----------
     salinity : array-like
@@ -181,6 +255,79 @@ def calc_freshwater_content(salinity,depth,ref_salinity=34.8):
     
     return np.sum((salinity-ref_salinity)/ref_salinity *dz)
     
+def loadmat(filename):
+    '''
+    this function should be called instead of direct spio.loadmat
+    as it cures the problem of not properly recovering python dictionaries
+    from mat files. It calls the function check keys to cure all entries
+    which are still mat-objects
+    '''
+    def _check_keys(d):
+        '''
+        checks if entries in dictionary are mat-objects. If yes
+        todict is called to change them to nested dictionaries
+        '''
+        for key in d:
+            if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
+                d[key] = _todict(d[key])
+        return d
+
+    def _todict(matobj):
+        '''
+        A recursive function which constructs from matobjects nested dictionaries
+        '''
+        d = {}
+        for strg in matobj._fieldnames:
+            elem = matobj.__dict__[strg]
+            if isinstance(elem, spio.matlab.mio5_params.mat_struct):
+                d[strg] = _todict(elem)
+            elif isinstance(elem, np.ndarray):
+                d[strg] = _tolist(elem)
+            else:
+                d[strg] = elem
+        return d
+
+    def _tolist(ndarray):
+        '''
+        A recursive function which constructs lists from cellarrays
+        (which are loaded as numpy ndarrays), recursing into the elements
+        if they contain matobjects.
+        '''
+        elem_list = []
+        for sub_elem in ndarray:
+            if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
+                elem_list.append(_todict(sub_elem))
+            elif isinstance(sub_elem, np.ndarray):
+                elem_list.append(_tolist(sub_elem))
+            else:
+                elem_list.append(sub_elem)
+        return elem_list
+    data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
+    return _check_keys(data)
+
+def mat2py_time(matlab_dnum):
+    '''
+    Converts matlab datenum to python datetime objects
+
+    Parameters
+    ----------
+    matlab_dnum : int
+        The matlab datenum.
+
+    Returns
+    -------
+    pydate : datetime object
+        The python datetime 
+
+    '''
+    return pd.to_datetime(np.asarray(matlab_dnum)-719529, unit='D')
+    # try: 
+    #     len(matlab_dnum)
+    # except:
+    #     matlab_dnum = [matlab_dnum]
+    # return [datetime.fromordinal(int(t)) + timedelta(days=t%1) - \
+    #                         timedelta(days = 366) for t in matlab_dnum]
+        
 ############################################################################
 #READING FUNCTIONS
 ############################################################################
@@ -301,6 +448,29 @@ def read_CTD_from_mat(matfile):
         
     return CTD
     
+def read_drifter(path):
+    """
+    Read the drifter data from given file path 
+
+    Parameters
+    ----------
+    path : str
+        The path to the file to read
+    
+    Returns 
+    -------
+    drifter_dat : pandas dataframe
+        Dataframe containing the drifter data      
+    """
+    
+    # Read the raw data
+    drifter_dat = pd.read_csv(path, index_col = 0, usecols = [0,1,2,3,4,5])
+    
+    # Convert the index to pandas datetime format
+    drifter_dat.index = pd.to_datetime(drifter_dat.index, format='%Y-%m-%d %H:%M:%S')
+    
+    return drifter_dat
+
 def read_mooring_from_mat(matfile):
     '''
     Read mooring data prepared in a .mat file.
@@ -316,28 +486,27 @@ def read_mooring_from_mat(matfile):
         Dictionary with the mooring data.
 
     '''
-    # read raw data using scipy.io.loadmat
-    raw_data = loadmat(matfile, squeeze_me=True, struct_as_record=False)
-    # find the name of the MATLAB struct
+    # read raw data using scipy.io.loadmat, plus more complicated changes
+    raw_data = loadmat(matfile)
     variable_name = list(raw_data.keys())[-1]
-    # convert to dictionary, remove _fieldnames (internal)
-    raw_data = raw_data[variable_name].__dict__
-    raw_data.pop('_fieldnames',None)
-    # extract the units dictionary
-    raw_data['units'] = raw_data['units'].__dict__
-    # extract the raw data for the instruments
-    raw_data['ins'] = [value.__dict__ for value in raw_data['ins']]
-    # extract processed data
-    raw_data['mat'] = raw_data['mat'].__dict__
+    raw_data = raw_data[variable_name]
     
     return raw_data
 
 def read_ADCP(filename):
+    ''' Reads ADCP data from a netCDF file typically provided by ship-mounted
+    ADCP instruments (like the one on Kristine Bonnevie).
+    
+    Parameters:
+    -------
+    filename: str
+        String with path to filename
+    '''
     # read data
     try:
         dset = Dataset(filename)
     except:
-        assert 0 > 1, 'File is not a valid netCDF file!'
+        assert False, 'File is not a valid netCDF file!'
        
     data= {}
     # read all the variables
@@ -348,10 +517,13 @@ def read_ADCP(filename):
         data[var] = dset.variables[var][:].data
         data[var][data[var]>42e20] = np.nan
     data['shipspeed'] = np.sqrt(data['uship']**2 + data['vship']**2)
+    
+    # Calculate the ADCP velocity prependicular to the ship
     data['crossvel'] = data['v']*np.sin(data['heading'][:,np.newaxis]*np.pi/180.) \
                      - data['u']*np.cos(data['heading'][:,np.newaxis]*np.pi/180.)  
     
     return data
+
 ############################################################################
 # PLOTTING FUNCTIONS
 ############################################################################
@@ -411,14 +583,19 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     
     # get the Y-axis limits 
     y_limits = (0,np.nanmax(Y))
+    if bottom_depth is not None:
+        y_limits = (0,np.nanmax(bottom_depth))
         
-    cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels) # draw Z
+    cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both') # draw Z
     if Z2 is not None:
         cSIG = ax.contour(X,Y,Z2,levels = Z2_contours,
                            colors='k',linewidths=[1],alpha=0.6) # draw Z2
         clabels = plt.clabel(cSIG, Z2_contours,fontsize=8,fmt = '%1.1f') # add contour labels
         [txt.set_bbox(dict(facecolor='white', edgecolor='none',
                            pad=0,alpha=0.6)) for txt in clabels]
+    else:
+        cSIG = None
+        
     plt.colorbar(cT,ax = ax,label=clabel,pad=0.01) # add colorbar
     ax.set_ylim(y_limits)
     ax.invert_yaxis()
@@ -441,13 +618,14 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
             if station_text != '':
                 ax.annotate(station_text+str(i+1),(pos,0),xytext=(0,10),
                         textcoords='offset points',ha='center')
+                
+    return ax, cT, cSIG
     
 def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
                      x_type='distance'):
     '''
     This function plots a CTD section of Temperature and Salinity,
-    given CTD data either directly (through `CTD`) or via a file (through)
-    `infile`.
+    given CTD data either directly or via a file.
     
     Parameters
     ----------
@@ -465,7 +643,12 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
 
     Returns
     -------
-    None.
+    axT: matplotlib.pyplot.axes
+        The axes for the temperature subplot
+    axS: matplotlib.pyplot.axes
+        The axes for the Salinity subplot
+    Ct_T: 
+        The ...
 
     '''
     # Check if the function has data to work with
@@ -502,12 +685,12 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     fig,[axT,axS] = plt.subplots(2,1,figsize=(8,9))
   
     # Temperature
-    contour_section(X,Z,fCTD['T'],fCTD['SIGTH'],ax = axT,
+    _,Ct_T,C_T = contour_section(X,Z,fCTD['T'],fCTD['SIGTH'],ax = axT,
                           station_pos=station_locs,cmap=cmocean.cm.thermal,
                           clabel='Temperature [˚C]',bottom_depth=BDEPTH,
                           station_text=section_name)
     # Salinity
-    contour_section(X,Z,fCTD['S'],fCTD['SIGTH'],ax=axS,
+    _,Ct_S,C_S = contour_section(X,Z,fCTD['S'],fCTD['SIGTH'],ax=axS,
                           station_pos=station_locs,cmap=cmocean.cm.haline,
                           clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)    
     # Add x and y labels
@@ -524,9 +707,11 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     # tight_layout
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
     
+    return axT, axS, Ct_T, Ct_S, C_T, C_S
+    
 def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                      x_type='distance',parameter='T',clabel='Temperature [˚C]',
-                     cmap=cmocean.cm.thermal):
+                     cmap=cmocean.cm.thermal,clevels=20):
     '''
     This function plots a CTD section of a chosen variable,
     given CTD data either directly (through `CTD`) or via a file (through)
@@ -552,7 +737,9 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
         The label on the colorbar axis. The default is 'Temperature [˚C]'.
     cmap : array-like or str, optional
         The colormap to be used. The default is cmocean.cm.thermal.
-
+    clevels : array-like or number, optional
+        The levels of the filled contourf. Either a number of levels, 
+        or the specific levels. The defauls is 20.
     Returns
     -------
     None.
@@ -590,10 +777,10 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     fig,ax = plt.subplots(1,1,figsize=(8,5))
   
     # Temperature
-    contour_section(X,Z,fCTD[parameter],fCTD['SIGTH'],ax = ax,
+    _,Ct,C = contour_section(X,Z,fCTD[parameter],fCTD['SIGTH'],ax = ax,
                           station_pos=station_locs,cmap=cmap,
                           clabel=clabel,bottom_depth=BDEPTH,
-                          station_text=section_name)
+                          station_text=section_name,clevels=clevels)
     # Add x and y labels
     ax.set_ylabel('Depth [m]')
     if x_type == 'distance':
@@ -606,6 +793,7 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     
     # tight_layout
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
+    return ax, Ct, C
     
 def plot_CTD_station(CTD,station,add = False):
     '''
@@ -696,7 +884,7 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
         stations = CTD.keys()
         
     # select only stations
-    CTD = {key:value for key,value in CTD.items() if key in stations}
+    CTD = {key:CTD[key] for key in stations}
     lat = [value['LAT'] for value in CTD.values()]
     lon = [value['LON'] for value in CTD.values()]
     std_lat,std_lon = np.std(lat),np.std(lon) 
@@ -768,7 +956,7 @@ def plot_CTD_ts(CTD,stations=None,pref = 0):
     '''
     # select only input stations
     if stations is not None:
-        CTD = {key:value for key,value in CTD.items() if key in stations}
+        CTD = {key:CTD[key] for key in stations}
         
     max_S = max([np.nanmax(value['SA']) for value in CTD.values()]) + 0.1
     min_S = min([np.nanmin(value['SA']) for value in CTD.values()]) - 0.1
@@ -829,18 +1017,25 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
     if p_ref > 0:
         plt.title('Density: $\sigma_{'+str(p_ref)+'}$',loc='left',fontsize=10)
     
-def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11)):
+def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
+                          geostr=False,levels_2 = np.linspace(-0.5,0.5,11)):
     
     # retrieve bottom depth and time of CTD stations
     time_section = [CTD[st]['dnum'] for st in stations]
+    print(time_section)
     BDEPTH = np.asarray([float(CTD[st]['BottomDepth']) for st in stations])
 
     # interpolate ADCP data to CTD time
     depth = ADCP['depth'][0,:]
-    lon = interp1d(ADCP['time'],ADCP['lon'])(time_section)
-    lat = interp1d(ADCP['time'],ADCP['lat'])(time_section)
-    u = interp1d(ADCP['time'],ADCP['u'],axis=0)(time_section)
-    v = interp1d(ADCP['time'],ADCP['v'],axis=0)(time_section)
+    try:
+        lon = interp1d(ADCP['time'],ADCP['lon'])(time_section)
+        lat = interp1d(ADCP['time'],ADCP['lat'])(time_section)
+        u = interp1d(ADCP['time'],ADCP['u'],axis=0)(time_section)
+        v = interp1d(ADCP['time'],ADCP['v'],axis=0)(time_section)
+    except:
+        raise ValueError('Cannot find ADCP data for at least one of the' \
+                         ' CTD stations. Check if the ADCP data is available' \
+                         ' for your CTD section!')
     shipspeed = interp1d(ADCP['time'],ADCP['shipspeed'],axis=0)(time_section)
     
     # printout of Ship Speed, to check
@@ -848,14 +1043,15 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11)):
     print(shipspeed)
     
     # calculate the angle of the section between each CTD station
-    angle = np.arctan(np.diff(lat)/np.cos(lat[1::]*np.pi/180)/np.diff(lon))
+    angle = np.arctan2(np.diff(lat),np.cos(lat[1::]*np.pi/180)*np.diff(lon))
     angle = np.array([angle[0]] + list(angle)+ [angle[-1]])
     angle = (angle[1::]+angle[0:-1])/2
+    print('The angle (from due east) of the section is:')
     print(angle*180/np.pi)
+    print('Note: Please check if that matches with the map!')
     
     # project u and v to the velocity perpendicular to the section
-    crossvel = u*np.cos(angle)[:,np.newaxis] + v*np.sin(angle)[:,np.newaxis]
-    
+    crossvel = u*np.sin(-angle)[:,np.newaxis] + v*np.cos(-angle)[:,np.newaxis]
     # create the distance vector of the section
     x = [0] + list(np.cumsum(gsw.distance(lon,lat)/1000))
     
@@ -863,11 +1059,39 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11)):
     plt.figure()
     plot_CTD_map(CTD,stations)
     plt.plot(lon,lat)
-    plt.quiver(lon,lat,np.nanmean(u[:,0:5],1),np.nanmean(v[:,0:5],1))
+    plt.quiver(lon,lat,np.nanmean(u[:,0:1],1),np.nanmean(v[:,0:1],1))
     
     # section
     plt.figure()
     contour_section(x,depth,crossvel.transpose(),cmap='RdBu',clevels=levels,
                     bottom_depth=BDEPTH,station_pos=x)
+    
     plt.xlabel('Distance [km]')
     plt.ylabel('Depth [m]')
+    plt.ylim(bottom=np.max(BDEPTH))
+    
+    if geostr:
+        # put the fields (the vector data) on a regular, common pressure and X grid
+        # by interpolating. 
+        fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations=stations,interp_opt=0)
+
+        lat = [CTD[k]['LAT'] for k in stations]
+        lon = [CTD[k]['LON'] for k in stations]
+
+        geo_strf = gsw.geo_strf_dyn_height(fCTD['SA'],fCTD['CT'],fCTD['P'],p_ref=0)
+        geo_vel,mid_lon,mid_lat = gsw.geostrophic_velocity(geo_strf,lon,lat)
+        mid_X = [0] + list(np.cumsum(gsw.distance(mid_lon,mid_lat)/1000))
+        mid_X = np.asarray(mid_X) + np.diff(X)[0]/2
+        plt.figure()
+        contour_section(mid_X,Z,geo_vel,station_pos=station_locs,
+                        clevels=levels_2,cmap='RdBu',bottom_depth=BDEPTH)
+        cSIG = plt.contour(X,Z,fCTD['SIGTH'],
+                           colors='k',linewidths=[1],alpha=0.6) # draw Z2
+        clabels = plt.clabel(cSIG,fontsize=8,fmt = '%1.1f') # add contour labels
+        [txt.set_bbox(dict(facecolor='white', edgecolor='none',
+                           pad=0,alpha=0.6)) for txt in clabels]
+        plt.xlim(0,np.max(X))
+        plt.xlabel('Distance [km]')
+        plt.ylabel('Depth [m]')
+        
+        
