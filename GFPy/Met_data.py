@@ -207,14 +207,14 @@ def read_dat_AWS(filename):
 # =============================================================================
 # Ship Log (Kristine Bonnevie)
 # =============================================================================
-def read_ship_log(filename):
+def read_ship_log(filenames):
     """
     Read the data logged by Kristine Bonnevie
 
     Parameters
     ==========
     
-    filename: str
+    filenames str
         path and name of file to be read
     
     Returns
@@ -224,37 +224,41 @@ def read_ship_log(filename):
         dataframe containing all variables observed by Kristine Bonnevie
     
     """
+    ship_log = pd.DataFrame()              
+    for filename in filenames:
+        # Read the data 
+        log = pd.read_csv(filename, skiprows=2, encoding = "ISO-8859-1", engine='python')
     
-    # Read the data 
-    log = pd.read_csv(filename, skiprows=2, encoding = "ISO-8859-1", engine='python')
+        # Get the date
+        day = filename[-14:-12]
+        month = filename[-11:-9]
+        year = filename[-8:-4]
     
-    # Get the date
-    day = filename.split('/')[-1][3:5]
-    month = filename.split('/')[-1][6:8]
-    year = filename.split('/')[-1][9:13]
+        log.Time = pd.to_datetime(year+'-'+month+'-'+day+' '+log.Time.copy())
+        log.Time.iloc[-1] = log.Time.iloc[-1]+timedelta(days=1)
     
-    log.Time = pd.to_datetime(year+'-'+month+'-'+day+' '+log.Time)
-    log.Time.iloc[-1] = log.Time.iloc[-1]+timedelta(days=1)
+        log.index = log.Time.copy()
     
-    log.index = log.Time
-    
-    # Get the longitude and latitude information
-    lon = np.zeros(len(log))
-    lat = np.zeros(len(log))
-    for i in range(len(log)):
-        try:
-            lon[i] = float(log['Longitude'].iloc[i][:3]) + float((log['Longitude'].str.split(' ').iloc[i][0])[3:])/60.
-            lat[i] = float(log['Latitude'].iloc[i][:2]) +  float((log['Latitude'].str.split(' ').iloc[i][0])[2:])/60.
-        except TypeError:
-            lon[i] = np.nan
-            lat[i] = np.nan
+        # Get the longitude and latitude information
+        lon = np.zeros(len(log))
+        lat = np.zeros(len(log))
+        for i in range(len(log)):
+            try:
+                lon[i] = float(log['Longitude'].iloc[i][:3]) + float((log['Longitude'].str.split(' ').iloc[i][0])[3:])/60.
+                lat[i] = float(log['Latitude'].iloc[i][:2]) +  float((log['Latitude'].str.split(' ').iloc[i][0])[2:])/60.
+            except TypeError:
+                lon[i] = np.nan
+                lat[i] = np.nan
             
-    log['Longitude'] = lon
-    log['Latitude']  = lat
+        log['Longitude'] = lon
+        log['Latitude']  = lat
     
-    log[log==-999] = np.nan
+        log[log==-999] = np.nan
+        ship_log = pd.concat([ship_log,log], axis=0)
+    # sort the index
+    ship_log = ship_log.sort_index()    
     
-    return log
+    return ship_log
 
 # =============================================================================
 # HOBO Raingauges 
@@ -384,6 +388,42 @@ def read_EasyLog(filenames):
         station[str(ID)].index = pd.to_datetime(station[str(ID)]['time'].tolist(), format='%d/%m/%Y %H:%M:%S')
         del station[str(ID)]['time']
     return station
+
+# =============================================================================
+# TinyTag
+# =============================================================================
+def read_TinyTag(filenames):
+    """
+    function to read the Tinytags
+    
+    Parameters
+    ==========
+    filenames: list
+        list of path and filenames to read 
+    
+    Results
+    =======
+    stations: dictionary
+        dictionary containing DataFrames of different TinyTags
+    """
+    stations = {}
+    for file in filenames:
+        ID = pd.read_csv(filenames[0], encoding = "ISO-8859-1", nrows=3, sep='\t')['1'][1]
+        # read the file
+        data = pd.read_csv(filenames[0], skiprows=[0,1,2,3], sep='\t', encoding = "ISO-8859-1")
+        # Get the values (seperate from the units)
+        TA = [float(i[0]) for i in data.Temperature.str.split(' ')]  # temperature
+        RH = [float(i[0]) for i in data.Humidity.str.split(' ')]     # humidity
+        TD = [float(i[0]) for i in data['Dew Point'].str.split(' ')] # dew point
+        # the month string is in norwegian, hence must be replaced by the international format
+        time = [pd.to_datetime(i.replace('mai','May').replace('okt','Oct').replace('des','Dec'), 
+                               format = '%d %b %Y %H.%M.%S') for i in data['Unnamed: 1']]
+        # Write to dataframe 
+        buffer = pd.DataFrame({'Temperature':TA,'Humidity':RH,'Dew Point':TD}, index = time)
+        stations[ID] = buffer
+        
+    return stations
+
 # =============================================================================
 # Ploting section
 # =============================================================================

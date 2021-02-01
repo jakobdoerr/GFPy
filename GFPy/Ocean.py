@@ -302,7 +302,8 @@ def myloadmat(filename):
                 elem_list.append(_tolist(sub_elem))
             else:
                 elem_list.append(sub_elem)
-        return elem_list
+        return np.asarray(elem_list)
+    
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
 
