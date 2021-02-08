@@ -534,6 +534,7 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
     header_line = f.readlines()[25].replace(';','').split(' ')
     while '' in header_line: header_line.remove('')
     while '\n' in header_line: header_line.remove('\n')
+    f.close()
     
     dd = pd.read_csv(file,encoding="ISO-8859-1",skiprows=28,
                      engine='python',delim_whitespace=True,
