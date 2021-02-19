@@ -9,12 +9,14 @@ Collection of functions to read and plot meteorological data relevant to GFI fie
 """
 import numpy as np
 import pandas as pd
+import os
+import requests
 from netCDF4 import Dataset
 from netCDF4 import num2date, date2num 
 from datetime import datetime, timedelta 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-
 
 # =============================================================================
 # General reading function
@@ -424,6 +426,207 @@ def read_TinyTag(filenames):
         
     return stations
 
+# ================================================================================
+# Get information and data about the MET Norway (Meteorologisk Institutt) stations 
+# ================================================================================
+
+def get_MET_station_info(filename):
+    '''
+    function to extract the MET norway station ID and corresponding location for a certain norwegian municipality
+
+    Parameters:
+    ===========
+    filename : str
+        path and name of file to be read
+    
+    Returns:
+    ========   
+    met_stations : pandas DataFrame
+        DataFrame containing the MET norway station ID and corresponding location
+    '''
+
+    # open the file 
+    file = open(filename,'r')
+    lines = file.readlines()
+
+    # remove the info about the external IDs
+    lines = pd.Series(lines)[~pd.Series(lines).str.contains('external ID')]
+
+    ID_loc = lines[lines.str.contains('ID:')].index
+
+    # Get the important station info
+    ID  = []
+    lon = []
+    lat = []
+    for i in range(len(lines[lines.str.contains('ID:')])):
+        ID  = np.append(ID, lines[ID_loc[i]].split(':')[1][:-1])
+        lon = np.append(lon, float(lines[ID_loc[i]+2].split(':')[1][:-1]))
+        lat = np.append(lat, float(lines[ID_loc[i]+3].split(':')[1][:-1]))
+        #Voss_stations[ID] = {}
+        #print(lines.iloc[ID_loc[ID]])
+    
+    # Make a dataframe from the information
+    met_stations = pd.DataFrame({'lon':lon, 'lat':lat}, index=ID)
+    
+    return met_stations
+
+def get_frost_variables(client_ID,station_ID, ref_time = '2020-01-01'):
+    """
+    Function to extract the variable names of a certain MET Norway station referring to a certain point in time.
+    
+    Parameters:
+    ===========
+    client_ID : str
+        For accessing observations from frost.met.no you need to have a client ID.
+        Visit https://frost.met.no/howto.html for getting a client ID, and for more information.
+    
+    station_ID : str
+        the station ID, as defined by MET Norway
+    
+    ref_time : str
+        availability of the variables at a certain reference point in time. format: YYYY-MM-DD
+    
+    Returns:
+    ========
+    variables : list
+        list containing the available variable names of a station for a certain point in time    
+    """
+    
+    url = 'https://frost.met.no/observations/availableTimeSeries/v0.jsonld'
+    params = {
+              'sources': station_ID,
+              'referencetime': ref_time,
+             }
+
+    # Issue an HTTP GET request
+    r = requests.get(url, params, auth=(client_ID,''))
+    # Extract JSON data
+    json = r.json()
+    if r.status_code == 200:
+        data = json['data']
+        print('Data retrieved from frost.met.no!')
+    else:
+        print('Error! Returned status code %s' % r.status_code)
+        print('Message: %s' % json['error']['message'])
+        print('Reason: %s' % json['error']['reason'])
+        raise RuntimeError(station_ID, json['error']['reason'])
+    df = pd.DataFrame(data)
+
+    try:
+        variables = df.elementId[df.elementId.apply(lambda e: '(' not in e)].values
+    except RuntimeError as re:
+        variables = []
+        print('Could not load variables for station:', s)
+        
+    return variables
+
+def get_frost_data(client_ID,station_ID, variable, period):
+    """
+    Access and export observation of a certain MET Norway station.
+    
+    Parameters:
+    ===========
+    client_ID : str
+        For accessing observations from frost.met.no you need to have a client ID.
+        Visit https://frost.met.no/howto.html for getting a client ID, and for more information.
+    
+    station_ID : str
+        the station ID, as defined by MET Norway
+    
+    variable : str
+        the variable to be read. Check the available variables with:
+    
+    period : str
+        period of interest to read. The format (start/end) is: YYYY-MM-DD/YYYY-MM-DD 
+    
+    Returns:
+    ========
+    df.value : pandas DataFrame 
+        DataFrame containing the time series of the variable of interest
+    
+    """
+    # Define endpoint and parameters
+    # Check the available variables e.g.:
+    # https://frost.met.no/observations/availableTimeSeries/v0.jsonld?sources=SN51610
+        
+    endpoint = 'https://frost.met.no/observations/v0.jsonld'
+    parameters = {
+                  'sources': station_ID,
+                  'elements': variable,
+                  'referencetime': period,
+                 }
+    # Issue an HTTP GET request
+    r = requests.get(endpoint, parameters, auth=(client_ID,''))
+    # Extract JSON data
+    json = r.json()
+    if r.status_code == 200:
+        data = json['data']
+        print('Data retrieved from frost.met.no!')
+    else:
+        print('Error! Returned status code %s' % r.status_code)
+        print('Message: %s' % json['error']['message'])
+        print('Reason: %s' % json['error']['reason'])
+        raise RuntimeError(station_ID, json['error']['message'])
+
+        
+    df = pd.json_normalize(data, record_path='observations')
+    dff = pd.json_normalize(data).drop('observations', axis=1)
+        
+    df = pd.concat([df, dff], axis=1)
+    df['time'] = pd.to_datetime(df.referenceTime)
+    df.index = df['time'].copy()
+    
+        
+    return df.value
+# =============================================================================
+# Read the high resolutioned topographic dataset
+# =============================================================================
+
+def read_topo(filename):
+    """
+    Read the high resolutioned topographic dataset (added 2021-02-19). 
+    The topography data can be downloaded from:
+    http://www.viewfinderpanoramas.org/Coverage%20map%20viewfinderpanoramas_org1.htm
+    
+    Parameters:
+    ===========
+    filename : str
+        path and name of file to be read
+    
+    Returns:
+    ========
+    alt : masked array
+        masked array containing the altitude information on a lat-lon grid. 
+        ocean grid points (altitude<0m) are masked. The unmasked altitude array can be accessed via alt.data 
+    lat : array
+        array containing the latitude vector
+    lon : array
+        array containing the longitude vector
+    """
+    
+    siz = os.path.getsize(filename)
+    dim = int(np.sqrt(siz/2))
+    
+    # Check if the dimensions match
+    assert dim*dim*2 == siz, 'Invalid file size'
+
+    # get the altitude data
+    alt = np.fromfile(filename, np.dtype('>i2'), dim*dim).reshape((dim, dim))
+
+    # --------------------------------------
+    # Get the latitude and longitude vectors
+    #---------------------------------------
+    # Get the lat and lon start points
+    lat_min = float(filename[-10:-8])
+    lon_min = float(filename[-7:-4])
+    # create the corresponding vectors
+    lat = np.arange(lat_min,lat_min+1.0,1/dim)[::-1]
+    lon = np.arange(lon_min,lon_min+1.0,1/dim)
+    
+    alt = np.ma.masked_where(alt == 0, alt)
+    
+    return alt, lat, lon
+
 # =============================================================================
 # Ploting section
 # =============================================================================
@@ -457,5 +660,33 @@ def plot_AWS(filename):
         i = i+1
     ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     ax[0].set_xlim([station.index[0],station.index[-1]])
+
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    '''
+    Function to use only a fraction of a matplotlib colormap
+    from: https://stackoverflow.com/a/18926541
     
+    Parameters: 
+    ===========
+    cmap : str
+        name of chosen colormap (matplotlib.colors.LinearSegmentedColormap)
+    minval : float
+       lower edge of colormap (minimum: 0.0)
+    maxval : float
+       upper edge of colormap (maximum: 1.0)
+    n : integer
+       number of color segments
+       
+    Returns:
+    ========
+    new_cmap : LinearSegmentedColormap
+        fraction [minval,maxval] of a matplotlib colormap
     
+    '''
+    if isinstance(cmap, str):
+        cmap = plt.get_cmap(cmap)
+    new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap    
