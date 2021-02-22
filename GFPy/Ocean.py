@@ -2,7 +2,7 @@
 """
 This module contains functions that read (and plot) various
 oceanographic instrument data. This includes:
-- CTD
+- CTD (incl. mini CTD)
 - ADCP
 - drifter
 - mooring
