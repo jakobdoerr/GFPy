@@ -334,7 +334,8 @@ def mat2py_time(matlab_dnum):
 #READING FUNCTIONS
 ############################################################################
 def read_ADCP(filename):
-    ''' Reads ADCP data from a netCDF file typically provided by ship-mounted
+    ''' 
+    Reads ADCP data from a netCDF file typically provided by ship-mounted
     ADCP instruments (like the one on Kristine Bonnevie).
     
     Parameters:
@@ -421,7 +422,12 @@ def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
         
         # get the interesting header fields and append it to the dict
         p.update(profile.attrs)
-            
+        
+        # if time is present: convert to dnum
+        try:
+            p['dnum'] = date2num(p['datetime'])
+        except:
+            pass
         # rename the most important ones to the same convention used in MATLAB, 
         # add other important ones
         p['LAT'] = p.pop('LATITUDE')
@@ -530,11 +536,28 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
     a dictionary containing the data
 
     '''
+    # map norwegian months to padded numbers
+    d2n = {'januar':'01','februar':'02','mars':'03','april':'04','mai':'05',
+           'juni':'06','juli':'07','august':'08','september':'09',
+           'oktober':'10','november':'11','desember':'12'}
+    
+    # open file
     f = open(file,encoding="ISO-8859-1")
-    header_line = f.readlines()[25].replace(';','').split(' ')
+    lines = f.readlines(10000) # read first lines of file
+    f.close()
+    
+    # read time string, prepare for datetime parsing
+    time_str = lines[2].replace(':','.').split(' ')[1::]
+    time_str[1] = d2n[time_str[1]]
+    time_str[0] = time_str[0].zfill(3)
+    
+    header_line = lines[25].replace(';','').split(' ')
     while '' in header_line: header_line.remove('')
     while '\n' in header_line: header_line.remove('\n')
-    f.close()
+    
+    if 'IntT' in header_line: # Check if instrument recorded time
+        header_line[header_line.index('IntT')] = 'Date'
+
     
     dd = pd.read_csv(file,encoding="ISO-8859-1",skiprows=28,
                      engine='python',delim_whitespace=True,
@@ -552,6 +575,11 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
     p['CT'] = gsw.CT_from_t(p['SA'],p['Temp'],p['Press'])
     p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
     p['st'] = station_name
+    p['file_time'] = pd.to_datetime(''.join(time_str)[0:-1],format='%d.%m%Y%H.%M.%S')
+    if 'Date' in p:
+        p['datetime'] = [pd.to_datetime(a+' '+b,format='%d.%m.%Y %H.%M.%S')
+                                    for (a,b) in zip(p['Date'],p['IntT'])]
+        del p['Date'], p['IntT']
 
     return p    
     
@@ -906,7 +934,7 @@ def plot_CTD_station(CTD,station,add = False):
     
 def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
                  depth_contours=[10,50,100,150,200,300,400,500,1000,2000,
-                          3000,4000,5000]):
+                          3000,4000,5000],st_labels=''):
     '''
     Function which plots a very basic map of selected CTD stations.
 
@@ -932,6 +960,8 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
 
     '''
     
+    assert type(st_labels) in [str,list,tuple], 'st_labels must either be' \
+        'a string, a tuple or a list.'
     # if no stations are provided, just plot all stations
     if stations is None:
         stations = CTD.keys()
@@ -971,10 +1001,16 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
                                                     linewidth=0.5))
         
     # add the points, and add labels
+    if type(st_labels) == str:
+        st_texts = [st_labels+str(s) for s in stations]
+    else:
+        st_texts = st_labels
+        
     ax.plot(lon,lat,'xr',transform=ccrs.PlateCarree())
     for i,station in enumerate(stations):
-        ax.text(lon[i],lat[i],str(station),horizontalalignment='center',
-                verticalalignment='bottom')
+        if extent[0]<lon[i]<extent[1] and extent[2]<lat[i]<extent[3]:
+            ax.text(lon[i],lat[i],st_texts[i],horizontalalignment='center',
+                    verticalalignment='bottom')
        
     gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
                   linewidth=1, color='gray', alpha=0.5, linestyle='--')
@@ -1075,7 +1111,32 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
     
 def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
                           geostr=False,levels_2 = np.linspace(-0.5,0.5,11)):
+    '''
     
+    Plots ADCP velocities along a CTD section given by *stations*. If wished, 
+    also plots geostrophic velocities estimates calculated from CTD section
+    Parameters
+    ----------
+    ADCP : dict
+        dictionary with ADCP data.
+    CTD : dict
+        dictionary with CTD data.
+    stations : (n, ) array-like
+        The CTD stations of the section.
+    levels : array-like, optional
+        The filled contour levels for the velocity. The default is 
+        np.linspace(-0.1,0.1,11).
+    geostr : bool, optional
+        Wether to also plot geostrphic velocity estimates. The default is False.
+    levels_2 : array-like, optional
+        The filled contour levels for the geostrophicvelocity. The default is 
+        np.linspace(-0.5,0.5,11).
+
+    Returns
+    -------
+    None.
+
+    '''
     # retrieve bottom depth and time of CTD stations
     time_section = [CTD[st]['dnum'] for st in stations]
     print(time_section)
@@ -1112,15 +1173,19 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
     x = [0] + list(np.cumsum(gsw.distance(lon,lat)/1000))
     
     # map
-    plt.figure()
-    plot_CTD_map(CTD,stations)
+    fig1 = plt.figure()
+    labels = ['S'+str(i) for i in range(1,len(stations)+1)]
+    plot_CTD_map(CTD,stations,st_labels=labels)
     plt.plot(lon,lat)
-    plt.quiver(lon,lat,np.nanmean(u[:,0:1],1),np.nanmean(v[:,0:1],1))
+    q = plt.quiver(lon,lat,np.nanmean(u[:,0:1],1),np.nanmean(v[:,0:1],1))
+    qk = plt.quiverkey(q,0.92,0.9,0.2,'20 cm/s',color='blue',labelcolor='blue',
+                  transform=plt.gca().transAxes,zorder=1000)
+    qk.text.set_backgroundcolor('w')
     
     # section
-    plt.figure()
+    fig2 = plt.figure()
     contour_section(x,depth,crossvel.transpose(),cmap='RdBu',clevels=levels,
-                    bottom_depth=BDEPTH,station_pos=x)
+                    bottom_depth=BDEPTH,station_pos=x,station_text='S')
     
     plt.xlabel('Distance [km]')
     plt.ylabel('Depth [m]')
@@ -1138,9 +1203,10 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
         geo_vel,mid_lon,mid_lat = gsw.geostrophic_velocity(geo_strf,lon,lat)
         mid_X = [0] + list(np.cumsum(gsw.distance(mid_lon,mid_lat)/1000))
         mid_X = np.asarray(mid_X) + np.diff(X)[0]/2
-        plt.figure()
+        fig3 = plt.figure()
         contour_section(mid_X,Z,geo_vel,station_pos=station_locs,
-                        clevels=levels_2,cmap='RdBu',bottom_depth=BDEPTH)
+                        clevels=levels_2,cmap='RdBu',bottom_depth=BDEPTH,
+                        station_text='S')
         cSIG = plt.contour(X,Z,fCTD['SIGTH'],
                            colors='k',linewidths=[1],alpha=0.6) # draw Z2
         clabels = plt.clabel(cSIG,fontsize=8,fmt = '%1.1f') # add contour labels
@@ -1150,4 +1216,6 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
         plt.xlabel('Distance [km]')
         plt.ylabel('Depth [m]')
         
-        
+        return fig1, fig2, fig3
+    else:
+        return fig1, fig2
