@@ -15,6 +15,7 @@ from seabird.cnv import fCNV
 import gsw
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib 
 from netCDF4 import Dataset,num2date
 import glob
 from scipy.interpolate import interp1d,griddata
@@ -26,6 +27,7 @@ import cartopy.crs as ccrs
 import cartopy.feature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import pandas as pd
+from adjustText import adjust_text as adj_txt
 
 ############################################################################
 # MISCELLANEOUS FUNCTIONS
@@ -72,7 +74,7 @@ def cal_dist_dir_on_sphere(longitude, latitude):
         
     distance = 2*R*np.arctan2(np.sqrt(alpha),np.sqrt(1-alpha))#(np.arcsin(np.sqrt(alpha))
            
-    time_delta = pd.Series((lat.index[1:]-lat.index[0:-1]).seconds, index = lat.index[0:-1])
+    time_delta = pd.Series((lat.index[1:]-lat.index[0:-1]).seconds, index = lat.index[1::])
     speed = (distance/time_delta)
         
     # Calculate the ships heading
@@ -184,7 +186,7 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
             fCTD[field] = np.array([interp1d(-value['z'],value[field],
                                              bounds_error=False)(Z)
                             for value in CTD.values()]).transpose()
-    
+        
     elif interp_opt == 1: # grid over depth and x (time or distance)
         X_fine = np.linspace(np.min(X),np.max(X),len(X)*20) # create fine X grid
         # original grids
@@ -556,12 +558,14 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
     while '\n' in header_line: header_line.remove('\n')
     
     if 'IntT' in header_line: # Check if instrument recorded time
-        header_line[header_line.index('IntT')] = 'Date'
+        header_line[header_line.index('IntT')] = 'Time'
+        header_line[header_line.index('IntD')] = 'Date'
 
     
     dd = pd.read_csv(file,encoding="ISO-8859-1",skiprows=28,
                      engine='python',delim_whitespace=True,
-                     skip_blank_lines=False,names =list(header_line))
+                     skip_blank_lines=False,names =list(header_line),
+                     na_values='########')
     
     p = {key:dd[key].to_numpy() for key in dd.columns}
     p['z'] = gsw.z_from_p(p['Press'],lat) 
@@ -577,9 +581,9 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
     p['st'] = station_name
     p['file_time'] = pd.to_datetime(''.join(time_str)[0:-1],format='%d.%m%Y%H.%M.%S')
     if 'Date' in p:
-        p['datetime'] = [pd.to_datetime(a+' '+b,format='%d.%m.%Y %H.%M.%S')
-                                    for (a,b) in zip(p['Date'],p['IntT'])]
-        del p['Date'], p['IntT']
+        p['datetime'] = [pd.to_datetime(a+' '+b,format='%d.%m.%Y %H:%M:%S')
+                                    for (a,b) in zip(p['Date'],p['Time'])]
+        del p['Date'], p['Time']
 
     return p    
     
@@ -605,11 +609,41 @@ def read_mooring_from_mat(matfile):
     
     return raw_data
 
+def read_thermosalinograph(path):
+    '''
+    Reads all the cnv-files from the ship's thermosalinograph and returns
+    a Pandas.DataFrame with the concatenated time series.
+
+    Parameters
+    ----------
+    path : str
+        The path to the files.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The concatenated timeseries.
+
+    '''
+    files = glob.glob(path+'*.cnv')
+    thermo = pd.DataFrame()
+    for file in files:
+        f = fCNV(file)
+        header = f.attrs
+        tt = f.as_DataFrame()
+        tt.index = header['datetime'] + pd.to_timedelta(tt.timeH,unit='hours')
+        tt = tt.drop(columns=['timeH'])
+        thermo = pd.concat([thermo,tt], axis=0)
+    
+    # sort the index (time)
+    return thermo.sort_index() 
+
 ############################################################################
 # PLOTTING FUNCTIONS
 ############################################################################
 def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contours=None,
-                    clabel='',bottom_depth=None,clevels=20,station_text=''):
+                    clabel='',bottom_depth=None,clevels=20,station_text='',
+                    interp_opt=1):
     '''    
     Plots a filled contour plot of *Z*, with contourf of *Z2* on top to 
     the axes *ax*. It also displays the position of stations, if given in
@@ -645,6 +679,8 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     station_text : str, optional
         Name to label the station locations. Can be the Section Name for 
         instance. The default is ''.
+    interp_opt: int, optional
+        Indicator which is used to decide whether to use pcolormesh or contourf 
 
     Returns
     -------
@@ -666,8 +702,21 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     y_limits = (0,np.nanmax(Y))
     if bottom_depth is not None:
         y_limits = (0,np.nanmax(bottom_depth))
-        
-    cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both') # draw Z
+     
+    if interp_opt == 0:
+        if type(clevels) == int:
+            cmap = plt.cm.get_cmap(cmap,clevels)
+            cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto') # draw Z
+        else:
+            cmap = plt.cm.get_cmap(cmap,len(clevels))
+            cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto',
+                           norm = matplotlib.colors.BoundaryNorm(clevels, 
+                                                          ncolors=len(clevels)-1, 
+                                                          clip=False)) # draw Z
+    else:
+        cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both') # draw Z
+    
+    
     if Z2 is not None:
         cSIG = ax.contour(X,Y,Z2,levels = Z2_contours,
                            colors='k',linewidths=[1],alpha=0.6) # draw Z2
@@ -703,7 +752,7 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     return ax, cT, cSIG
     
 def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
-                     x_type='distance'):
+                     x_type='distance',interp_opt = 1):
     '''
     This function plots a CTD section of Temperature and Salinity,
     given CTD data either directly or via a file.
@@ -721,7 +770,11 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
         name of the Cruise, will also appear in the title. The default is ''.
     x_type : str, optional
         Wheter to use 'distance' or 'time' as the x-axis. The default is 'distance'.
-
+    interp_opt: int, optional
+        Integer which interpolation method to use for gridding
+                     0: no interpolation,
+                     1: linear interpolation, fine grid (default),
+                     2: linear interpolation, coarse grid. The default is 1.
     Returns
     -------
     axT: matplotlib.pyplot.axes
@@ -760,7 +813,8 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
 
     # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
-    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type)
+    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type,
+                                        interp_opt=interp_opt)
     
     # plot the figure
     fig,[axT,axS] = plt.subplots(2,1,figsize=(8,9))
@@ -769,11 +823,12 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     _,Ct_T,C_T = contour_section(X,Z,fCTD['T'],fCTD['SIGTH'],ax = axT,
                           station_pos=station_locs,cmap=cmocean.cm.thermal,
                           clabel='Temperature [˚C]',bottom_depth=BDEPTH,
-                          station_text=section_name)
+                          station_text=section_name,interp_opt=interp_opt)
     # Salinity
     _,Ct_S,C_S = contour_section(X,Z,fCTD['S'],fCTD['SIGTH'],ax=axS,
                           station_pos=station_locs,cmap=cmocean.cm.haline,
-                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH)    
+                          clabel='Salinity [g kg$^{-1}$]',bottom_depth=BDEPTH,
+                          interp_opt=interp_opt)    
     # Add x and y labels
     axT.set_ylabel('Depth [m]')
     axS.set_ylabel('Depth [m]')
@@ -792,7 +847,7 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     
 def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                      x_type='distance',parameter='T',clabel='Temperature [˚C]',
-                     cmap=cmocean.cm.thermal,clevels=20):
+                     cmap=cmocean.cm.thermal,clevels=20,interp_opt = 1):
     '''
     This function plots a CTD section of a chosen variable,
     given CTD data either directly (through `CTD`) or via a file (through)
@@ -821,6 +876,11 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     clevels : array-like or number, optional
         The levels of the filled contourf. Either a number of levels, 
         or the specific levels. The defauls is 20.
+    interp_opt: int, optional
+        Integer which interpolation method to use for gridding
+                     0: no interpolation,
+                     1: linear interpolation, fine grid (default),
+                     2: linear interpolation, coarse grid. The default is 1.
     Returns
     -------
     None.
@@ -852,7 +912,8 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
 
     # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
-    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type)
+    fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type,
+                                        interp_opt=interp_opt)
     
     # plot the figure
     fig,ax = plt.subplots(1,1,figsize=(8,5))
@@ -861,7 +922,8 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     _,Ct,C = contour_section(X,Z,fCTD[parameter],fCTD['SIGTH'],ax = ax,
                           station_pos=station_locs,cmap=cmap,
                           clabel=clabel,bottom_depth=BDEPTH,
-                          station_text=section_name,clevels=clevels)
+                          station_text=section_name,clevels=clevels,
+                          interp_opt=interp_opt)
     # Add x and y labels
     ax.set_ylabel('Depth [m]')
     if x_type == 'distance':
@@ -876,7 +938,7 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     fig.tight_layout(h_pad=0.1,rect=[0,0,1,0.95])
     return ax, Ct, C
     
-def plot_CTD_station(CTD,station,add = False):
+def plot_CTD_station(CTD,station,axes = None, add = False,linestyle='-'):
     '''
     Plots the temperature and salinity profile of a single station.
 
@@ -887,9 +949,14 @@ def plot_CTD_station(CTD,station,add = False):
               the function read_CTD. Or a str with a file where the dict is stored
     station : number
         Number which station to plot (must be in the CTD data!).
-    add : bool, optional
+        
+    ax: (2,) array-like
+        List of two axes, the first one being the axes for temperature, 
+        and the second one for Salinity
+    add : bool, optional, depracated
         Switch whether to add the plot to a figure (True), or to create a 
-        new figure for the plot (False). The default is False.
+        new figure for the plot (False). The default is True. This parameter
+        is depracated, which means that it doesn't have any effect anymore. 
 
     Returns
     -------
@@ -914,46 +981,64 @@ def plot_CTD_station(CTD,station,add = False):
     # select station
     CTD = CTD[station]
     
-    if add:
+    if axes == None:
         ax = plt.gca()
+        ax2 = ax.twiny()
+        ax.invert_yaxis()
     else:
-        fig,ax = plt.subplots(1,1,figsize=(5,5))
+        assert len(axes) == 2, 'You need to provide a list of two axes'
+        ax = axes[0]
+        ax2 = axes[1]
+
     
     # plot
-    ax.plot(CTD['CT'],-CTD['z'],'r')
+    ax.plot(CTD['CT'],-CTD['z'],'r',linestyle=linestyle)
     ax.set_xlabel('Conservative temperature [˚C]',color='r')
     ax.set_ylabel('Depth [m]')
     ax.spines['bottom'].set_color('r')
     ax.tick_params(axis='x', colors='r')
-    ax.invert_yaxis()
-    ax2 = ax.twiny()
-    ax2.plot(CTD['SA'],-CTD['z'],'b')
+    
+    
+    ax2.plot(CTD['SA'],-CTD['z'],'b',linestyle=linestyle)
     ax2.set_xlabel('Absolute salinity [g / kg]',color='b')
     ax2.tick_params(axis='x', colors='b')
     plt.tight_layout()
     
-def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
+    return ax,ax2
+    
+def plot_CTD_map(CTD,stations=None,topography=None,extent=None,
                  depth_contours=[10,50,100,150,200,300,400,500,1000,2000,
-                          3000,4000,5000],st_labels=''):
+                          3000,4000,5000],st_labels='',adjust_text=False):
     '''
     Function which plots a very basic map of selected CTD stations.
 
     Parameters
     ----------
     CTD : dict
-        Dictionary containing the CTD data. TODO: Should also take a list of pos!
+        Dictionary containing the CTD data. 
     stations : array_like, optional
         The positions to put on the map. The default is all stations.
-    topofile : str, optional
-        MAT file with bathymetry data. The default is None, then no bathymetry
-        will be plotted.
+    topography : str or array-like, optional
+        Either a file or an array with topography data. 
+        If topography is given in a file, three filetypes are supported:
+            - .nc, in that case the file should contain the variables
+              'lat', 'lon', and 'z'
+            - .mat, in that case the file should contain the variables 
+              'lat', 'lon', and 'D'
+            - .npy, in that case the file should contain an array with 
+              lat, lon and elevation as columns (and total size 3 x lon x lat)
+        If topography is given as an array, it should be an array with 
+              lat, lon and elevation as columns (and total size 3 x lon x lat)
+        The default is None, then no bathymetry will be plotted (only coasts).
     extent : (4,) array_like, optional
         List of map extent. Must be given as [lon0,lon1,lat0,lat1].
         The default is None.
     depth_contours : array_like, optional
         A list containing contour levels for the bathymetry. The default is 
         [10,50,100,150,200,300,400,500,1000,2000,3000,4000,5000].
-
+    adjust_text : bool, optional
+        Whether to adjust the station names so they don't overlap. Default is
+        True.
     Returns
     -------
     None.
@@ -979,9 +1064,28 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
         extent = [lon_range[0],lon_range[1],lat_range[0],lat_range[1]]
     ax.set_extent(extent)
     
-    if topofile is not None: # if topography is provided
-        topo = loadmat(topofile)
-        topo_lat,topo_lon,topo_z = topo['lat'],topo['lon'],topo['D']
+    if topography is not None:
+        if type(topography) is str:
+            ext = topography.split('.')[-1]
+            if ext == 'mat':
+                topo = loadmat(topography)
+                topo_lat,topo_lon,topo_z = topo['lat'],topo['lon'],topo['D']
+            elif ext == 'npy':
+                topo = np.load(topography)
+                topo_lat,topo_lon,topo_z = topo[0],topo[1],topo[2]
+            elif ext == 'nc':
+                topo = Dataset(topography)
+                topo_lat,topo_lon,topo_z = topo.variables['lat'][:], \
+                                           topo.variables['lon'][:], \
+                                           topo.variables['z'][:]
+                if len(topo_lon.shape) == 1:
+                    topo_lon,topo_lat = np.meshgrid(topo_lon,topo_lat)
+            else:
+                assert False, 'Unknown topography file extension!'
+        else: # assume topography is array with 3 columns (lat,lon,z)
+            topo_lat,topo_lon,topo_z = topography[0],topography[1],topography[2]
+
+        topo_z[topo_z < -1] = -1 # discard elevation above sea level
 
         BC = ax.contour(topo_lon,topo_lat,topo_z,colors='lightblue',
                    levels=depth_contours,linewidths=0.3,
@@ -1007,10 +1111,97 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
         st_texts = st_labels
         
     ax.plot(lon,lat,'xr',transform=ccrs.PlateCarree())
+    texts = []
     for i,station in enumerate(stations):
         if extent[0]<lon[i]<extent[1] and extent[2]<lat[i]<extent[3]:
-            ax.text(lon[i],lat[i],st_texts[i],horizontalalignment='center',
-                    verticalalignment='bottom')
+            texts.append(ax.text(lon[i],lat[i],st_texts[i],horizontalalignment='center',
+                    verticalalignment='bottom'))
+       
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                  linewidth=1, color='gray', alpha=0.5, linestyle='--')
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    
+    # make sure aspect ration of the axes is not too extreme
+    ax.set_aspect('auto')
+    if adjust_text:
+        adj_txt(texts, expand_text=(1.2,1.6),
+            arrowprops=dict(arrowstyle='-', color='black'), ax=ax)
+    plt.gcf().canvas.draw()
+    plt.tight_layout()
+
+def plot_empty_map(extent,topography=None,
+                 depth_contours=[10,50,100,150,200,300,400,500,1000,2000,
+                          3000,4000,5000]):
+    '''
+    Function which plots a very basic map of selected CTD stations.
+
+    Parameters
+    ----------
+    extent : (4,) array_like
+        List of map extent. Must be given as [lon0,lon1,lat0,lat1].
+    topography : str or array-like, optional
+        Either a file or an array with topography data. 
+        If topography is given in a file, three filetypes are supported:
+            - .nc, in that case the file should contain the variables
+              'lat', 'lon', and 'z'
+            - .mat, in that case the file should contain the variables 
+              'lat', 'lon', and 'D'
+            - .npy, in that case the file should contain an array with 
+              lat, lon and elevation as columns (and total size 3 x lon x lat)
+        If topography is given as an array, it should be an array with 
+              lat, lon and elevation as columns (and total size 3 x lon x lat)
+        The default is None, then no bathymetry
+        will be plotted.
+    depth_contours : array_like, optional
+        A list containing contour levels for the bathymetry. The default is 
+        [10,50,100,150,200,300,400,500,1000,2000,3000,4000,5000].
+
+    Returns
+    -------
+    None.
+
+    '''
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.set_extent(extent)
+    if topography is not None:
+        if type(topography) is str:
+            ext = topography.split('.')[-1]
+            if ext == 'mat':
+                topo = loadmat(topography)
+                topo_lat,topo_lon,topo_z = topo['lat'],topo['lon'],topo['D']
+            elif ext == 'npy':
+                topo = np.load(topography)
+                topo_lat,topo_lon,topo_z = topo[0],topo[1],topo[2]
+            elif ext == 'nc':
+                topo = Dataset(topography)
+                topo_lat,topo_lon,topo_z = topo.variables['lat'][:], \
+                                           topo.variables['lon'][:], \
+                                           topo.variables['z'][:]
+                if len(topo_lon.shape) == 1:
+                    topo_lon,topo_lat = np.meshgrid(topo_lon,topo_lat)
+            else:
+                assert False, 'Unknown topography file extension!'
+        else: # assume topography is array with 3 columns (lat,lon,z)
+            topo_lat,topo_lon,topo_z = topography[0],topography[1],topography[2]
+
+        topo_z[topo_z < -1] = -1 # discard elevation above sea level
+        BC = ax.contour(topo_lon,topo_lat,topo_z,colors='lightblue',
+                   levels=depth_contours,linewidths=0.3,
+                    transform=ccrs.PlateCarree())
+        clabels = ax.clabel(BC, depth_contours,fontsize=4,fmt = '%i')
+        print(clabels)
+        if clabels is not None:
+            for txt in clabels:
+                txt.set_bbox(dict(facecolor='none', edgecolor='none',
+                               pad=0,alpha=0.)) 
+        ax.contour(topo_lon,topo_lat,topo_z,levels=[0.1],colors='k',linewidths=0.5)
+        ax.contourf(topo_lon,topo_lat,topo_z,levels=[-1,1],
+                    colors=['lightgray','white'])
+    else: # if no topography is provided
+        ax.add_feature(cartopy.feature.GSHHSFeature(scale='auto',
+                                                    facecolor='lightgray',
+                                                    linewidth=0.5))
        
     gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
                   linewidth=1, color='gray', alpha=0.5, linestyle='--')
@@ -1021,7 +1212,9 @@ def plot_CTD_map(CTD,stations=None,topofile=None,extent=None,
     ax.set_aspect('auto')
     plt.gcf().canvas.draw()
     plt.tight_layout()
-
+    
+    return ax
+    
 def plot_CTD_ts(CTD,stations=None,pref = 0):
     '''
     Plots a TS diagram of selected stations from a CTD dataset. 
