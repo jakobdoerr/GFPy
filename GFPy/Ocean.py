@@ -703,7 +703,7 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     if bottom_depth is not None:
         y_limits = (0,np.nanmax(bottom_depth))
      
-    if interp_opt == 0:
+    if interp_opt == 0: #only z-interpolation: use pcolormesh
         if type(clevels) == int:
             cmap = plt.cm.get_cmap(cmap,clevels)
             cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto') # draw Z
@@ -713,7 +713,8 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
                            norm = matplotlib.colors.BoundaryNorm(clevels, 
                                                           ncolors=len(clevels)-1, 
                                                           clip=False)) # draw Z
-    else:
+        plt.xlim(np.nanmin(X),np.nanmax(X))
+    else: # full interpolation: use contours
         cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both') # draw Z
     
     
