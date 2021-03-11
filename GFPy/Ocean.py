@@ -252,6 +252,13 @@ def calc_freshwater_content(salinity,depth,ref_salinity=34.8):
         The freshwater content for the profile, in meters
 
     '''
+    try:
+        idx = np.where(salinity>ref_salinity)[0][0]
+        salinity = salinity[:idx]
+        depth = depth[:idx]
+    except:
+        pass
+    
     salinity = np.mean([salinity[1:],salinity[:-1]])
     
     dz = np.diff(depth)
@@ -332,6 +339,48 @@ def mat2py_time(matlab_dnum):
     # return [datetime.fromordinal(int(t)) + timedelta(days=t%1) - \
     #                         timedelta(days = 366) for t in matlab_dnum]
         
+    
+def present_dict(d,offset=''):
+    '''
+    Iterative function to present the contents of a dictionary. Prints in 
+    the terminal.
+
+    Parameters
+    ----------
+    d : dict
+        The dictionary.
+    offset : str, optional
+        Offset used for iterative calls. The default is ''.
+
+    Returns
+    -------
+    None.
+
+    '''
+    if len(d.keys()) > 50:
+        print(offset,'keys:',list(d.keys()))
+        print(offset,'first one containing:')
+        f = d[list(d.keys())[0]]
+        if type(f) == dict:
+            present_dict(f,offset=' |'+offset+'       ')
+        else:
+            print(' |'+offset+'       ',type(f),', size:',np.size(f))
+    else:
+        for i,k in d.items():
+            if type(k) == dict:
+                print(offset,i,': dict, containing:')
+                present_dict(k,offset=' |'+offset+'       ')
+                print()
+            elif (1 < np.size(k) < 5) and (type(k[0]) != dict):
+                print(offset,i,':',k)
+            elif np.size(k) == 1:
+                print(offset,i,':',k)
+            elif np.size(k) > 1 and type(k[0]) == dict:
+                print(offset,i,': array of dicts, first one containing:')
+                present_dict(k[0],offset=' |'+offset+'       ') 
+            else:
+                print(offset,i,':',type(k),', size:',np.size(k))
+            
 ############################################################################
 #READING FUNCTIONS
 ############################################################################
@@ -367,7 +416,8 @@ def read_ADCP(filename):
     
     return data
 
-def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
+def read_CTD(inpath,cruise_name='cruise',outpath=None,stations=None,
+             salt_corr=(1.,0.),oxy_corr = (1.,0.)):
     '''
     This function reads in the CTD data from cnv files in `inpath`
     for the stations `stations` and returns a list of dicts containing
@@ -376,25 +426,43 @@ def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
     Parameters
     ----------
     inpath : str
-        input path where the cnv files are stored.
-    cruise_name : str
-        name of the cruise.
+        Either the path to a folder where the cnv files are stored, or the path
+        to a .npy file with the data. In the latter case, NO correction can be
+        applied.
+    cruise_name : str, optional
+        name of the cruise. The default is 'cruise'
     outpath : str, optional
         path where to store the output. The default is None.
     stations : array_like, optional
         list of stations to read in (optional). If not given, 
         the function will read all stations in `inpath`. The default is None.
-    corr : tuple, optional
+    salt_corr : tuple, optional
+        tuple with 2 values containing (slope,intersect) of
+                      linear correction model. The default is (1.,0.).
+    oxy_corr : tuple, optional
         tuple with 2 values containing (slope,intersect) of
                       linear correction model. The default is (1.,0.).
 
     Returns
     -------
     CTD_dict : dict
-        a dict of dicts contaning the data for
+        a dict of dicts containing the data for
                     all the relevant station data.
 
     '''
+    # first, check if the infile is a npy file. In that case, just read the
+    # npy file and return the dict. No correction can be applied.
+    if inpath[-4::] == '.npy':
+        CTD_dict = np.load(inpath,allow_pickle=True).item()
+        if stations is not None:
+            try:
+                CTD_dict = {k:CTD_dict[k] for k in stations}
+            except:
+                assert False, 'Some of the stations you provide don\'t exist'\
+                    'in the data!'
+        return CTD_dict
+
+    # If a folder is given, read single cnv files.
     # create a dict that converts the variable names in the cnv files to
     # the variable names used by us:
     var_names = {'PRES':'P','temperature':'T','t168C':'T2','CNDC':'C',
@@ -437,7 +505,7 @@ def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
         p['z'] = gsw.z_from_p(p['P'],p['LAT'])
         p['BottomDepth'] = np.round(np.nanmax(np.abs(p['z']))+8)
         p['C'][p['C']<1] = np.nan
-        p['C'] = corr[0]*p['C'] + corr[1] # apply correction
+        p['C'] = salt_corr[0] * p['C'] + salt_corr[1] # apply correction
         p['T'][p['T']<-2] = np.nan
         p['S'] = gsw.SP_from_C(p['C']*10,p['T'],p['P'])
         p['S'][p['S']<20] = np.nan
@@ -446,7 +514,8 @@ def read_CTD(inpath,cruise_name,outpath=None,stations=None,corr=(1.,0.)):
         p['CT'] = gsw.CT_from_t(p['SA'],p['T'],p['P'])
         p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
         p['st'] = int(p['filename'].split('.')[0][-4::])
-        
+        if 'OX' in p:
+            p['OX'] = oxy_corr[0] * p['OX'] + oxy_corr[1]
         CTD_dict[p['st']]= p
 
     # save data if outpath was given    
@@ -632,6 +701,10 @@ def read_thermosalinograph(path):
         header = f.attrs
         tt = f.as_DataFrame()
         tt.index = header['datetime'] + pd.to_timedelta(tt.timeH,unit='hours')
+        # because fCNV.as_DataFrame doesn't correctly transfer lat and lon, 
+        # do manually
+        tt['LATITUDE'] = f['LATITUDE']
+        tt['LONGITUDE'] = f['LONGITUDE']
         tt = tt.drop(columns=['timeH'])
         thermo = pd.concat([thermo,tt], axis=0)
     
@@ -1304,7 +1377,8 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
         plt.title('Density: $\sigma_{'+str(p_ref)+'}$',loc='left',fontsize=10)
     
 def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
-                          geostr=False,levels_2 = np.linspace(-0.5,0.5,11)):
+                          geostr=False,levels_2 = np.linspace(-0.5,0.5,11),
+                          topography = None):
     '''
     
     Plots ADCP velocities along a CTD section given by *stations*. If wished, 
@@ -1325,7 +1399,9 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
     levels_2 : array-like, optional
         The filled contour levels for the geostrophicvelocity. The default is 
         np.linspace(-0.5,0.5,11).
-
+    topography : str or array-like, optional
+        The topography to use for the map of the section. See documentation of
+        Ocean.plot_CTD_map() . Default is None.
     Returns
     -------
     None.
@@ -1369,7 +1445,7 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
     # map
     fig1 = plt.figure()
     labels = ['S'+str(i) for i in range(1,len(stations)+1)]
-    plot_CTD_map(CTD,stations,st_labels=labels)
+    plot_CTD_map(CTD,stations,st_labels=labels,topography=topography)
     plt.plot(lon,lat)
     q = plt.quiver(lon,lat,np.nanmean(u[:,0:1],1),np.nanmean(v[:,0:1],1))
     qk = plt.quiverkey(q,0.92,0.9,0.2,'20 cm/s',color='blue',labelcolor='blue',
