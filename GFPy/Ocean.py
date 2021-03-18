@@ -678,6 +678,32 @@ def read_mooring_from_mat(matfile):
     
     return raw_data
 
+def read_mooring(file):
+    '''
+    Read mooring data prepared in a either a .npy or .mat file.
+
+    Parameters
+    ----------
+    file : str
+        Full path to the .mat or .npy file.
+
+    Returns
+    -------
+    raw_data : dict
+        Dictionary with the mooring data.
+
+    '''
+    ext = file.split('.')[-1]
+    if ext == 'mat':
+        # read raw data using scipy.io.loadmat, plus more complicated changes
+        raw_data = myloadmat(file)
+        variable_name = list(raw_data.keys())[-1]
+        raw_data = raw_data[variable_name]
+    elif ext == 'npy':
+        raw_data = np.load(file,allow_pickle=True).item()
+        
+    return raw_data
+
 def read_thermosalinograph(path):
     '''
     Reads all the cnv-files from the ship's thermosalinograph and returns
