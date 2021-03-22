@@ -394,6 +394,38 @@ def read_EasyLog(filenames):
 # =============================================================================
 # TinyTag
 # =============================================================================
+#def read_TinyTag(filenames):
+#    """
+#    function to read the Tinytags
+#    
+#    Parameters
+#    ==========
+#    filenames: list
+#        list of path and filenames to read 
+#    
+#    Results
+#    =======
+#    stations: dictionary
+#        dictionary containing DataFrames of different TinyTags
+#    """
+#    stations = {}
+#    for file in filenames:
+#        ID = pd.read_csv(filenames[0], encoding = "ISO-8859-1", nrows=3, sep='\t')['1'][1]
+#        # read the file
+#        data = pd.read_csv(filenames[0], skiprows=[0,1,2,3], sep='\t', encoding = "ISO-8859-1")
+#        # Get the values (seperate from the units)
+#        TA = [float(i[0]) for i in data.Temperature.str.split(' ')]  # temperature
+#        RH = [float(i[0]) for i in data.Humidity.str.split(' ')]     # humidity
+#        TD = [float(i[0]) for i in data['Dew Point'].str.split(' ')] # dew point
+#        # the month string is in norwegian, hence must be replaced by the international format
+#        time = [pd.to_datetime(i.replace('mai','May').replace('okt','Oct').replace('des','Dec'), 
+#                               format = '%d %b %Y %H.%M.%S') for i in data['Unnamed: 1']]
+#        # Write to dataframe 
+#        buffer = pd.DataFrame({'Temperature':TA,'Humidity':RH,'Dew Point':TD}, index = time)
+#        stations[ID] = buffer
+#        
+#    return stations
+
 def read_TinyTag(filenames):
     """
     function to read the Tinytags
@@ -410,20 +442,13 @@ def read_TinyTag(filenames):
     """
     stations = {}
     for file in filenames:
-        ID = pd.read_csv(filenames[0], encoding = "ISO-8859-1", nrows=3, sep='\t')['1'][1]
-        # read the file
-        data = pd.read_csv(filenames[0], skiprows=[0,1,2,3], sep='\t', encoding = "ISO-8859-1")
-        # Get the values (seperate from the units)
-        TA = [float(i[0]) for i in data.Temperature.str.split(' ')]  # temperature
-        RH = [float(i[0]) for i in data.Humidity.str.split(' ')]     # humidity
-        TD = [float(i[0]) for i in data['Dew Point'].str.split(' ')] # dew point
-        # the month string is in norwegian, hence must be replaced by the international format
-        time = [pd.to_datetime(i.replace('mai','May').replace('okt','Oct').replace('des','Dec'), 
-                               format = '%d %b %Y %H.%M.%S') for i in data['Unnamed: 1']]
-        # Write to dataframe 
-        buffer = pd.DataFrame({'Temperature':TA,'Humidity':RH,'Dew Point':TD}, index = time)
-        stations[ID] = buffer
-        
+        ID = file[-10:-4]
+        TinyTags = pd.read_csv(file, skiprows=[1], delimiter = '\t', index_col=0)
+        # Convert the index to datetime format
+        TinyTags.index = pd.to_datetime(TinyTags.index, format = '%d.%m.%Y %H.%M.%S')
+        for col in TinyTags.columns:
+            TinyTags[col] = TinyTags[col].str.replace(',','.').astype(float)
+        stations[ID] = TinyTags
     return stations
 
 # ================================================================================
