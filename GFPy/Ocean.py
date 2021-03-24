@@ -176,60 +176,53 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
         X = (X - X[0])*24
         
     # this X vector is where the stations are located, so save that
-    station_locs = X
+    station_locs = X[:]
     fields = set([field for field in CTD[stations[0]] 
                         if np.size(CTD[stations[0]][field]) > 1])
     
+    # original grids
+    X_orig,Z_orig = [f.ravel() for f in np.meshgrid(X,Z)]
+    # new grids in case of 2-d interpolation
+    if interp_opt == 1:
+        X_int = np.linspace(np.min(X),np.max(X),len(X)*20) # create fine X grid
+        Z_int = Z[:]
+    elif interp_opt == 2:
+        X_int = np.linspace(np.min(X),np.max(X),20) # create coarse X grid
+        Z_int = np.linspace(mindepth,maxdepth,50)
+          
     fCTD = {}
-    if interp_opt == 0: # only grid over depth
-        for field in fields:
-            fCTD[field] = np.array([interp1d(-value['z'],value[field],
-                                             bounds_error=False)(Z)
-                            for value in CTD.values()]).transpose()
-        
-    elif interp_opt == 1: # grid over depth and x (time or distance)
-        X_fine = np.linspace(np.min(X),np.max(X),len(X)*20) # create fine X grid
-        # original grids
-        X_orig,Z_orig = [f.ravel() for f in np.meshgrid(X,Z)] 
-        for field in fields:
-            # grid in Z
-            temp_array = np.array([interp1d(-value['z'],value[field],
-                                            bounds_error=False)(Z)
-                            for value in CTD.values()]).transpose().ravel()
-            mask = np.where(~np.isnan(temp_array)) # NaN mask
-
-            # grid in X
-            try:
+    for field in fields:
+        try:
+            # grid over Z
+            temp_array = []
+            for value in CTD.values():
+                if field in value:
+                    temp_array.append(interp1d(-value['z'],value[field],
+                                            bounds_error=False)(Z))
+                else:
+                    temp_array.append(interp1d(Z,Z*np.nan,
+                                            bounds_error=False)(Z))
+            temp_array = np.array(temp_array).transpose()
+            
+            if interp_opt == 0: # only grid over Z
+                fCTD[field] = temp_array
+            else: # grid over Z and X
+                temp_array = temp_array.ravel()
+                mask = np.where(~np.isnan(temp_array)) # NaN mask
+                # grid in X and Z
                 fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
-                                    temp_array[mask], # data
-                                    tuple(np.meshgrid(X_fine,Z))) # new grid
-            except:
-                print('Warning: No gridding possible for '+field+'. Maybe ' \
-                      'no valid data?')
-                fCTD[field] = np.meshgrid(X_fine,Z)[0] * np.nan
-        X = X_fine
-        
-    elif interp_opt == 2: # grid over depth and x, use coarse resolution
-        X_coarse = np.linspace(np.min(X),np.max(X),20) # create coarse X grid
-        Z_coarse = np.linspace(mindepth,maxdepth,50)
-        # original grids
-        X_orig,Z_orig = [f.ravel() for f in np.meshgrid(X,Z)] 
-        for field in fields:
-            # grid in Z
-            temp_array = np.array([interp1d(-value['z'],value[field],
-                                            bounds_error=False)(Z)
-                            for value in CTD.values()]).transpose().ravel()
-            mask = np.where(~np.isnan(temp_array)) # NaN mask
-
-            # grid in X
-            try:
-                fCTD[field] = griddata((X_orig[mask],Z_orig[mask]), # old grid
-                                    temp_array[mask], # data
-                                    tuple(np.meshgrid(X_coarse,Z_coarse))) # new grid
-            except:
-                fCTD[field] = np.meshgrid(X_coarse,Z_coarse)[0] * np.nan
-        X,Z = X_coarse,Z_coarse
-
+                                     temp_array[mask], # data
+                                     tuple(np.meshgrid(X_int,Z_int))) # new grid
+        except:
+            print('Warning: No gridding possible for '+field+'. Maybe ' \
+                      'no valid data? Setting to nan...')
+            if interp_opt == 0:
+                fCTD[field] = np.meshgrid(X,Z)[0] * np.nan
+            else:
+                fCTD[field] = np.meshgrid(X_int,Z_int)[0] * np.nan   
+                
+    if interp_opt > 0:           
+        X,Z = X_int,Z_int
         
     return fCTD,Z,X,station_locs
   

@@ -3,13 +3,13 @@ from distutils.core import setup
 setup(
   name = 'GFPy',        
   packages = ['GFPy'],   # Chose the same as "name"
-  version = '0.1.4',      # Start with a small number and increase it with every change you make
+  version = '0.1.5',      # Start with a small number and increase it with every change you make
   license='MIT',        # Chose a license from here: https://help.github.com/articles/licensing-a-repository
   description = 'Python toolbox for reading and analysing of meteorological and oceanographic data on UiB cruises.',   # Give a short description about your library
   author = 'Jakob Doerr, Christiane Duscha',                   # Type in your name
   author_email = 'jakob.dorr@uib.no, christiane.duscha@uib.no',      # Type in your E-Mail
   url = 'https://github.com/jakobdoerr/GFPy',   # Provide either the link to your github or to your website
-  download_url = 'https://github.com/jakobdoerr/GFPy/archive/v0.1.4.tar.gz',   
+  download_url = 'https://github.com/jakobdoerr/GFPy/archive/v0.1.5.tar.gz',   
   keywords = ['oceanography', 'meteorology', 'bergen'],   # Keywords that define your package best
   install_requires=['matplotlib','seabird','numpy','scipy','pandas','netCDF4','cartopy','gsw','cmocean','requests','adjusttext'],
   classifiers=[
