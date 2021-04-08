@@ -87,6 +87,80 @@ def cal_dist_dir_on_sphere(longitude, latitude):
     
     return speed, heading
 
+def cart2pol(u,v,ctype='math'):
+    '''
+    Converts cartesian velocity (u,v) to polar velocity (angle,speed), 
+    using either 
+    1) mathematical
+    2) oceanographical, or
+    3) meteorological 
+    definition.
+
+    Parameters
+    ----------
+    u : numeric, or array-like
+        u-Component of velocity.
+    v : numeric, or array-like
+        v-Component of velocity.
+    ctype : string, optional
+        Type of definitition, 'math', 'ocean' or 'meteo'. The default is 'math'.
+
+    Returns
+    -------
+    angle : numeric, or array-like
+        Angle of polar velocity.
+    speed : numeric, or array-like
+        Speed of polar velocity.
+
+    '''
+    speed = np.sqrt(u**2 + v**2)
+    if ctype == 'math':
+        angle = 180/np.pi* np.arctan2(v,u)
+    if ctype in ['meteo','ocean']:
+        angle = 180 / np.pi * np.arctan2(u,v)         
+        if ctype == 'meteo':
+            angle = (angle+180)%360
+        
+    return angle,speed
+
+def pol2cart(angle,speed,ctype='math'):
+    '''
+    Converts polar velocity (angle,speed) to cartesian velocity (u,v), 
+    using either 
+    1) mathematical
+    2) oceanographical, or
+    3) meteorological 
+    definition.
+
+    Parameters
+    ----------
+    angle : numeric, or array-like
+        Angle of polar velocity.
+    speed : numeric, or array-like
+        Speed of polar velocity.
+    ctype : string, optional
+        Type of definitition, 'math', 'ocean' or 'meteo'. The default is 'math'.
+
+    Returns
+    -------
+    u : numeric, or array-like
+        u-Component of velocity.
+    v : numeric, or array-like
+        v-Component of velocity.
+
+    '''
+    if ctype == 'math':
+        u = speed * np.cos(angle*np.pi/180.)
+        v = speed * np.sin(angle*np.pi/180.)
+    elif ctype == 'meteo':
+        u = -speed * np.sin(angle*np.pi/180.)
+        v = -speed * np.cos(angle*np.pi/180.)
+    elif ctype == 'ocean':
+        u = speed * np.sin(angle*np.pi/180.)
+        v = speed * np.cos(angle*np.pi/180.)
+    
+    return u,v
+        
 def create_latlon_text(lat,lon):
     '''
     Creates two strings which contain a text for latitude and longitude
