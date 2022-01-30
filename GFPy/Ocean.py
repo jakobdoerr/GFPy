@@ -536,7 +536,7 @@ def read_CTD(inpath,cruise_name='cruise',outpath=None,stations=None,
                  'CNDC2':'C2','PSAL':'S','PSAL2':'S2','oxygen_ml_L':'OX',
                  'flC':'flC','par':'PAR','altM':'Z','timeJ':'time',
                  'timeK':'time','timeS':'elapsedtime','longitude':'lon',
-                 'latitude':'lat'}
+                 'latitude':'lat','TEMP':'T','oxsolML/L':'OX','flSP':'flC'}
     # get all CTD station files in inpath
     files = glob.glob(inpath+'*.cnv')
     #If stations are provided, select the ones that exist
@@ -580,7 +580,7 @@ def read_CTD(inpath,cruise_name='cruise',outpath=None,stations=None,
         p['SA'] = gsw.SA_from_SP(p['S'],p['P'],p['LON'],p['LAT'])
         p['CT'] = gsw.CT_from_t(p['SA'],p['T'],p['P'])
         p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
-        p['st'] = int(p['filename'].split('.')[0][-4::])
+        p['st'] = int(p['filename'].split('.')[0].split('_')[0][-4::])
         if 'OX' in p:
             p['OX'] = oxy_corr[0] * p['OX'] + oxy_corr[1]
         CTD_dict[p['st']]= p

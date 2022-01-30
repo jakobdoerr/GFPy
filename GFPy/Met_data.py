@@ -443,7 +443,8 @@ def read_TinyTag(filenames):
     stations = {}
     for file in filenames:
         ID = file[-10:-4]
-        TinyTags = pd.read_csv(file, skiprows=[1], delimiter = '\t', index_col=0)
+        TinyTags = pd.read_csv(file, skiprows=[1], delimiter = '\t', index_col=0,
+                               encoding='unicode_escape')
         # Convert the index to datetime format
         TinyTags.index = pd.to_datetime(TinyTags.index, format = '%d.%m.%Y %H.%M.%S')
         for col in TinyTags.columns:
