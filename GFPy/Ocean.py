@@ -722,7 +722,56 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
         del p['Date'], p['Time']
 
     return p    
+
+def read_MSS(files):
+    '''
+    Parameters
+    ----------
+    file : str
+        Full path to the .mat file.
+
+    Returns
+    -------
+    None.
+
+    '''  
+    # Determine if folder or file is given
+    if  '.mat' in files:
+        files = [files]
+    else:
+        files = glob.glob(files+'*.mat')
+        
+    out_data = {'CTD':{},'MIX':{},'DATA':{}}
+    for file in files:
+        st_name = int(file.split('.')[0][-4:])
+        raw_data = myloadmat(file)
+        data = {k:raw_data[k] for k in ['CTD','MIX','DATA']}
+        
+        #CTD = raw_data['CTD']
+        #MIX = raw_data['MIX']
+        
+        for name in ['CTD','MIX']:
+            for var in ['LON','LAT','fname','date']:
+                data[name][var] = raw_data['STA'][var]
+            try:
+                data[name]['z'] = gsw.z_from_p(data[name]['P'],data[name]['LAT']) 
+            except: # just use 60N as lat if lat is not provided
+                data[name]['z'] = gsw.z_from_p(data[name]['P'],60)
+                
+            # Something weird in the data...
+            data[name]['z'][np.isnan(data[name]['SIGTH'])] = np.nan
+            data[name]['BottomDepth'] = np.nanmax(-data[name]['z'])
+            data[name]['datetime'] = pd.to_datetime(data[name]['date']
+                                                    ,format='%d-%b-%Y %H:%M:%S')
+                                    
     
+        
+        
+        for name in ['CTD','MIX','DATA']:
+            out_data[name][st_name] = data[name]
+            
+    return out_data['CTD'],out_data['MIX'],out_data['DATA']
+
 def read_mooring_from_mat(matfile):
     '''
     Read mooring data prepared in a .mat file.
@@ -809,7 +858,7 @@ def read_thermosalinograph(path):
 ############################################################################
 def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contours=None,
                     clabel='',bottom_depth=None,clevels=20,station_text='',
-                    interp_opt=1):
+                    interp_opt=1,tlocator=None):
     '''    
     Plots a filled contour plot of *Z*, with contourf of *Z2* on top to 
     the axes *ax*. It also displays the position of stations, if given in
@@ -847,7 +896,10 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
         instance. The default is ''.
     interp_opt: int, optional
         Indicator which is used to decide whether to use pcolormesh or contourf 
-
+    tlocator: matplotlib.ticker locators, optional
+        special locator for the colorbar. For example logarithmic values, 
+        for that use matplotlib.ticker.LogLocator(). Default is None.
+        
     Returns
     -------
     ax : plot axes
@@ -870,18 +922,27 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
         y_limits = (0,np.nanmax(bottom_depth))
      
     if interp_opt == 0: #only z-interpolation: use pcolormesh
+        norm = None
         if type(clevels) == int:
+            if tlocator == 'logarithmic':
+                norm = matplotlib.colors.LogNorm(np.nanmin(Z),np.nanmax(Z))
             cmap = plt.cm.get_cmap(cmap,clevels)
-            cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto') # draw Z
         else:
+            norm = matplotlib.colors.BoundaryNorm(clevels,
+                                                  ncolors=len(clevels)-1, 
+                                                  clip=False)
+            if tlocator is 'logarithmic':
+                norm = matplotlib.colors.LogNorm(np.min(clevels),np.max(clevels))
             cmap = plt.cm.get_cmap(cmap,len(clevels))
-            cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto',
-                           norm = matplotlib.colors.BoundaryNorm(clevels, 
-                                                          ncolors=len(clevels)-1, 
-                                                          clip=False)) # draw Z
+            
+        cT = ax.pcolormesh(X,Y,Z,cmap=cmap,shading='auto',norm=norm) # draw Z
         plt.xlim(np.nanmin(X),np.nanmax(X))
     else: # full interpolation: use contours
-        cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both') # draw Z
+        locator = None
+        if tlocator == 'logarithmic':
+            locator = matplotlib.ticker.LogLocator()
+        cT = ax.contourf(X,Y,Z,cmap=cmap,levels=clevels,extend='both',
+                         locator=locator) # draw Z
     
     
     if Z2 is not None:
@@ -1014,7 +1075,8 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     
 def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                      x_type='distance',parameter='T',clabel='Temperature [˚C]',
-                     cmap=cmocean.cm.thermal,clevels=20,interp_opt = 1):
+                     cmap=cmocean.cm.thermal,clevels=20,interp_opt = 1,
+                     tlocator=None):
     '''
     This function plots a CTD section of a chosen variable,
     given CTD data either directly (through `CTD`) or via a file (through)
@@ -1048,6 +1110,10 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                      0: no interpolation,
                      1: linear interpolation, fine grid (default),
                      2: linear interpolation, coarse grid. The default is 1.
+    tlocator: matplotlib.ticker locators, optional
+        special locator for the colorbar. For example logarithmic values, 
+        for that use matplotlib.ticker.LogLocator(). Default is None.
+        
     Returns
     -------
     None.
@@ -1090,7 +1156,7 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                           station_pos=station_locs,cmap=cmap,
                           clabel=clabel,bottom_depth=BDEPTH,
                           station_text=section_name,clevels=clevels,
-                          interp_opt=interp_opt)
+                          interp_opt=interp_opt,tlocator=tlocator)
     # Add x and y labels
     ax.set_ylabel('Depth [m]')
     if x_type == 'distance':
