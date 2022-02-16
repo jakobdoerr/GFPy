@@ -28,6 +28,7 @@ import cartopy.feature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import pandas as pd
 from adjustText import adjust_text as adj_txt
+import os
 
 ############################################################################
 # MISCELLANEOUS FUNCTIONS
@@ -723,7 +724,7 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
 
     return p    
 
-def read_MSS(files):
+def read_MSS(files,excel_file=None):
     '''
     Parameters
     ----------
@@ -735,6 +736,21 @@ def read_MSS(files):
     None.
 
     '''  
+    # first, handle the excel file
+    if excel_file is not None:
+        exc = pd.read_excel(excel_file)
+        exc.columns = np.arange(len(exc.columns))
+        st = exc[[a for a in exc.columns 
+                    if 'Station name' in exc[a].to_numpy()][0]]
+        lat_deg = exc[[a for a in exc.columns 
+                    if 'Latitude/ N' in exc[a].to_numpy()][0]]
+        lat_min = exc[[a for a in exc.columns 
+                    if 'Latitude/ N' in exc[a].to_numpy()][0]+1]
+        lon_deg = exc[[a for a in exc.columns 
+                    if 'Longitude/ E' in exc[a].to_numpy()][0]]
+        lon_min = exc[[a for a in exc.columns 
+                    if 'Longitude/ E' in exc[a].to_numpy()][0]+1]
+        
     # Determine if folder or file is given
     if  '.mat' in files:
         files = [files]
@@ -743,16 +759,21 @@ def read_MSS(files):
         
     out_data = {'CTD':{},'MIX':{},'DATA':{}}
     for file in files:
-        st_name = int(file.split('.')[0][-4:])
+        st_name = int(file.split('.mat')[0][-4:])
         raw_data = myloadmat(file)
         data = {k:raw_data[k] for k in ['CTD','MIX','DATA']}
-        
-        #CTD = raw_data['CTD']
-        #MIX = raw_data['MIX']
         
         for name in ['CTD','MIX']:
             for var in ['LON','LAT','fname','date']:
                 data[name][var] = raw_data['STA'][var]
+            
+            if excel_file is not None:
+                try:
+                    index = np.where(st == st_name)[0][0]
+                    data[name]['LON'] = lon_deg[index] + float(lon_min[index])/60
+                    data[name]['LAT'] = lat_deg[index] + float(lat_min[index])/60
+                except:
+                    pass
             try:
                 data[name]['z'] = gsw.z_from_p(data[name]['P'],data[name]['LAT']) 
             except: # just use 60N as lat if lat is not provided
