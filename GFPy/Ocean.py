@@ -197,7 +197,7 @@ def create_latlon_text(lat,lon):
     
     return latstring,lonstring
 
-def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
+def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance',z_fine=False):
     '''
     This function accepts a CTD dict of dicts, finds out the maximum 
     length of the depth vectors for the given stations, and fills all
@@ -216,7 +216,7 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
                      2: linear interpolation, coarse grid. The default is 1.
     x_type : str, optional
         whether X is 'time' or 'distance'. The default is 'distance'.
-
+    z_fine: Whether to use a fine z grid. If True, will be 10 cm, otherwise 1 m
     Returns
     -------
     fCTD : dict
@@ -239,7 +239,10 @@ def CTD_to_grid(CTD,stations=None,interp_opt= 1,x_type='distance'):
     # construct the Z-vector from the max and min depth of the given stations
     maxdepth = np.nanmax([np.nanmax(-CTD[i]['z']) for i in stations])
     mindepth = np.nanmin([np.nanmin(-CTD[i]['z']) for i in stations])
-    Z = np.linspace(mindepth,maxdepth,int(maxdepth-mindepth)+1)
+    if z_fine:
+        Z = np.linspace(mindepth,maxdepth,int((maxdepth-mindepth)*10)+1)
+    else:
+        Z = np.linspace(mindepth,maxdepth,int(maxdepth-mindepth)+1)
     
     # construct the X-vector, either distance or time
     if x_type == 'distance':
@@ -1001,7 +1004,7 @@ def contour_section(X,Y,Z,Z2=None,ax=None,station_pos=None,cmap='jet',Z2_contour
     return ax, cT, cSIG
     
 def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
-                     x_type='distance',interp_opt = 1):
+                     x_type='distance',interp_opt = 1,z_fine=False):
     '''
     This function plots a CTD section of Temperature and Salinity,
     given CTD data either directly or via a file.
@@ -1024,6 +1027,8 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
                      0: no interpolation,
                      1: linear interpolation, fine grid (default),
                      2: linear interpolation, coarse grid. The default is 1.
+    z_fine: Whether to use a fine z grid. If True, will be 10 cm, otherwise 1 m
+    
     Returns
     -------
     axT: matplotlib.pyplot.axes
@@ -1063,7 +1068,7 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
     # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
     fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type,
-                                        interp_opt=interp_opt)
+                                        interp_opt=interp_opt,z_fine=z_fine)
     
     # plot the figure
     fig,[axT,axS] = plt.subplots(2,1,figsize=(8,9))
@@ -1097,7 +1102,7 @@ def plot_CTD_section(CTD,stations,section_name='',cruise_name = '',
 def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
                      x_type='distance',parameter='T',clabel='Temperature [˚C]',
                      cmap=cmocean.cm.thermal,clevels=20,interp_opt = 1,
-                     tlocator=None):
+                     tlocator=None,z_fine=False):
     '''
     This function plots a CTD section of a chosen variable,
     given CTD data either directly (through `CTD`) or via a file (through)
@@ -1134,6 +1139,7 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     tlocator: matplotlib.ticker locators, optional
         special locator for the colorbar. For example logarithmic values, 
         for that use matplotlib.ticker.LogLocator(). Default is None.
+    z_fine: Whether to use a fine z grid. If True, will be 10 cm, otherwise 1 m
         
     Returns
     -------
@@ -1167,7 +1173,7 @@ def plot_CTD_single_section(CTD,stations,section_name='',cruise_name = '',
     # put the fields (the vector data) on a regular, common pressure and X grid
     # by interpolating. 
     fCTD,Z,X,station_locs = CTD_to_grid(CTD,x_type=x_type,
-                                        interp_opt=interp_opt)
+                                        interp_opt=interp_opt,z_fine=z_fine)
     
     # plot the figure
     fig,ax = plt.subplots(1,1,figsize=(8,5))
@@ -1558,7 +1564,7 @@ def create_empty_ts(T_extent,S_extent,p_ref = 0):
     
 def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
                           geostr=False,levels_2 = np.linspace(-0.5,0.5,11),
-                          topography = None):
+                          topography = None,z_fine=False):
     '''
     
     Plots ADCP velocities along a CTD section given by *stations*. If wished, 
@@ -1582,6 +1588,8 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
     topography : str or array-like, optional
         The topography to use for the map of the section. See documentation of
         Ocean.plot_CTD_map() . Default is None.
+    z_fine: Whether to use a fine z grid. If True, will be 10 cm, otherwise 1 m
+    
     Returns
     -------
     None.
@@ -1644,7 +1652,8 @@ def plot_ADCP_CTD_section(ADCP,CTD,stations,levels=np.linspace(-0.1,0.1,11),
     if geostr:
         # put the fields (the vector data) on a regular, common pressure and X grid
         # by interpolating. 
-        fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations=stations,interp_opt=0)
+        fCTD,Z,X,station_locs = CTD_to_grid(CTD,stations=stations,interp_opt=0,
+                                            z_fine=z_fine)
 
         lat = [CTD[k]['LAT'] for k in stations]
         lon = [CTD[k]['LON'] for k in stations]
