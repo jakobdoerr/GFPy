@@ -707,14 +707,14 @@ def read_mini_CTD(file,corr=(1,0),lon=0,lat=60.,station_name = 'miniCTD'):
                      skip_blank_lines=False,names =list(header_line),
                      na_values='########')
     
-    p = {key:dd[key].to_numpy() for key in dd.columns}
+    p = {key:dd[key].to_numpy()[1::] for key in dd.columns}
     p['z'] = gsw.z_from_p(p['Press'],lat) 
     p['Cond'][p['Cond']<0] = np.nan
     p['Cond'] = corr[0]*p['Cond'] + corr[1] # apply correction
-    p['Temp'][p['Temp']<-2] = np.nan
+    p['Temp'][p['Temp']<-2.5] = np.nan
     p['Prac_Sal'] = gsw.SP_from_C(p['Cond'],p['Temp'],p['Press'])
-    p['Prac_Sal'][p['Prac_Sal']<5] = np.nan
-    p['Cond'][p['Prac_Sal']<5] = np.nan
+    p['Prac_Sal'][p['Prac_Sal']<0] = np.nan
+    p['Cond'][p['Prac_Sal']<0] = np.nan
     p['SA'] = gsw.SA_from_SP(p['Prac_Sal'],p['Press'],lon,lat)
     p['CT'] = gsw.CT_from_t(p['SA'],p['Temp'],p['Press'])
     p['SIGTH'] = gsw.sigma0(p['SA'],p['CT'])
